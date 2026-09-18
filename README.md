@@ -22,6 +22,8 @@ npm start
 
 Visita quindi [http://127.0.0.1:4173](http://127.0.0.1:4173). Interrompi il server con `Ctrl+C`.
 
+Il server è compatibile con i percorsi Windows e Unix. Se avevi già avviato una versione precedente e vedevi il messaggio `Accesso negato`, chiudi il terminale del vecchio server con `Ctrl+C` e riavvialo con `npm start`.
+
 ## Avvio da qualsiasi terminale
 
 ```bash

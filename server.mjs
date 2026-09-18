@@ -1,12 +1,12 @@
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, normalize } from 'node:path';
+import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import process from 'node:process';
 
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 4173);
-const root = process.cwd();
+const root = resolve(process.cwd());
 
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -17,11 +17,22 @@ const contentTypes = {
 };
 
 const server = createServer((request, response) => {
-  const pathname = decodeURIComponent(new URL(request.url, `http://${request.headers.host}`).pathname);
-  const relativePath = pathname === '/' ? 'index.html' : pathname.slice(1);
-  const filePath = normalize(join(root, relativePath));
+  let pathname;
 
-  if (!filePath.startsWith(`${root}/`)) {
+  try {
+    pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
+  } catch {
+    response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Richiesta non valida');
+    return;
+  }
+
+  const requestedPath = pathname === '/' ? 'index.html' : pathname.slice(1);
+  const filePath = resolve(root, requestedPath);
+  const pathFromRoot = relative(root, filePath);
+
+  // `relative` rende il controllo valido sia con separatori Unix (`/`) sia
+  // Windows (`\\`), senza impedire l'accesso ai normali file del progetto.
+  if (pathFromRoot.startsWith('..') || isAbsolute(pathFromRoot)) {
     response.writeHead(403).end('Accesso negato');
     return;
   }
