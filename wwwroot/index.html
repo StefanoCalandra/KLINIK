@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Intestazione: marchio, collegamenti alle sezioni e azioni principali. -->
   <header class="site-header">
     <a class="brand" href="#top" aria-label="Clinica Aurora, home">
       <span class="brand-mark" aria-hidden="true">✦</span>
@@ -32,6 +33,7 @@
   </header>
 
   <main id="top">
+    <!-- Hero: presenta il servizio e porta subito alla prenotazione. -->
     <section class="hero">
       <div class="hero-content reveal">
         <span class="eyebrow"><i></i> Al tuo fianco, ogni giorno</span>
@@ -61,6 +63,7 @@
       </div>
     </section>
 
+    <!-- Ricerca rapida dimostrativa: la conferma apre il modulo di contatto. -->
     <section class="quick-search" aria-label="Ricerca rapida">
       <div><span class="search-step">01</span><label for="specialty">Di cosa hai bisogno?</label><select id="specialty"><option>Scegli la specialità</option><option>Cardiologia</option><option>Dermatologia</option><option>Pediatria</option><option>Medicina generale</option></select></div>
       <div><span class="search-step">02</span><label for="location">Dove?</label><select id="location"><option>Milano, Centro</option><option>Milano, Navigli</option><option>Online</option></select></div>
@@ -68,6 +71,7 @@
       <button class="search-btn" id="findVisit"><svg aria-hidden="true"><use href="#icon-search"/></svg><span>Cerca disponibilità</span></button>
     </section>
 
+    <!-- Panoramica dei tre servizi principali della clinica. -->
     <section class="section services" id="servizi">
       <div class="section-heading reveal">
         <div><span class="kicker">I NOSTRI SERVIZI</span><h2>Tutto ciò che serve.<br><em>Senza complicazioni.</em></h2></div>
@@ -89,6 +93,7 @@
       </div>
     </section>
 
+    <!-- Elenco esemplificativo dei medici e delle disponibilità. -->
     <section class="section specialists" id="specialisti">
       <div class="specialist-copy reveal">
         <span class="kicker">PROFESSIONISTI DI FIDUCIA</span>
@@ -104,6 +109,7 @@
       </div>
     </section>
 
+    <!-- Vetrina della farmacia: al momento non include un e-commerce reale. -->
     <section class="pharmacy" id="farmacia">
       <div class="pharmacy-inner reveal">
         <span class="kicker light">FARMACIA AURORA</span>
@@ -118,6 +124,7 @@
       </div>
     </section>
 
+    <!-- Call to action finale per riproporre la prenotazione. -->
     <section class="section cta" id="contatti">
       <span class="brand-mark large">✦</span><h2>Inizia oggi a prenderti<br><em>cura di te.</em></h2><p>Il primo passo è il più importante. Noi siamo qui per accompagnarti.</p><button class="btn btn-primary" data-book>Prenota una visita →</button>
     </section>
@@ -125,6 +132,7 @@
 
   <footer><a class="brand" href="#top"><span class="brand-mark">✦</span><span>Clinica <strong>Aurora</strong></span></a><p>Via della Salute 12, Milano · +39 02 555 0188</p><p>© 2026 Clinica Aurora</p></footer>
 
+  <!-- Dialog nativo accessibile; JavaScript gestisce apertura e conferma. -->
   <dialog id="bookingDialog">
     <button class="dialog-close" aria-label="Chiudi">×</button>
     <span class="kicker">PRENOTA ORA</span><h2>Come possiamo aiutarti?</h2><p>Lascia i tuoi dati: ti ricontatteremo per confermare la visita.</p>
@@ -132,6 +140,7 @@
     <div class="success-message" hidden><span>✓</span><h3>Richiesta ricevuta!</h3><p>Ti contatteremo al più presto.</p></div>
   </dialog>
 
+  <!-- Simbolo SVG riutilizzabile dai pulsanti di ricerca. -->
   <svg class="svg-defs" aria-hidden="true"><symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16.5 16.5 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol></svg>
   <script src="script.js"></script>
 </body>
