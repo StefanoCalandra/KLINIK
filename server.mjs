@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import process from 'node:process';
+import { createGzip } from 'node:zlib';
 
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 4173);
@@ -18,13 +19,17 @@ const contentTypes = {
   '.svg': 'image/svg+xml',
 };
 
+const compressibleExtensions = new Set(['.css', '.html', '.js', '.json', '.svg']);
+
 const server = createServer((request, response) => {
   let pathname;
+  let requestUrl;
 
   // Converte l'URL in un percorso locale. Un escape percentuale malformato
   // genera una risposta controllata, senza arrestare l'intero processo Node.
   try {
-    pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
+    requestUrl = new URL(request.url ?? '/', 'http://localhost');
+    pathname = decodeURIComponent(requestUrl.pathname);
   } catch {
     response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Richiesta non valida');
     return;
@@ -45,11 +50,30 @@ const server = createServer((request, response) => {
   // caricato interamente in memoria. Le risorse mancanti restituiscono 404.
   try {
     if (!statSync(filePath).isFile()) throw new Error('Not a file');
+    const extension = extname(filePath);
+    const acceptsGzip = request.headers['accept-encoding']?.includes('gzip');
+    const shouldCompress = acceptsGzip && compressibleExtensions.has(extension);
+    const isVersionedAsset = requestUrl.searchParams.has('v');
+
     response.writeHead(200, {
-      'Content-Type': contentTypes[extname(filePath)] ?? 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Content-Type': contentTypes[extension] ?? 'application/octet-stream',
+      'Cache-Control': isVersionedAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
+      'Content-Encoding': shouldCompress ? 'gzip' : 'identity',
+      'Vary': 'Accept-Encoding',
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+      'Content-Security-Policy': "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
     });
-    createReadStream(filePath).pipe(response);
+
+    if (request.method === 'HEAD') {
+      response.end();
+      return;
+    }
+
+    const stream = createReadStream(filePath);
+    if (shouldCompress) stream.pipe(createGzip()).pipe(response);
+    else stream.pipe(response);
   } catch {
     response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Pagina non trovata');
   }

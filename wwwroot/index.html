@@ -5,10 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Clinica Aurora: visite specialistiche, telemedicina, farmaci e assistenza sanitaria.">
   <title>Clinica Aurora — La salute, più vicina</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <!-- Gli asset hanno una versione nella query: il browser può conservarli a
+       lungo e scaricarli di nuovo solo quando questo valore viene aggiornato. -->
+  <link rel="stylesheet" href="styles.css?v=20260923">
 </head>
 <body>
   <!-- Intestazione: marchio, collegamenti alle sezioni e azioni principali. -->
@@ -50,7 +49,7 @@
       </div>
       <div class="hero-visual reveal">
         <div class="soft-shape"></div>
-        <img src="assets/doctor.svg" alt="La dottoressa Aurora, medico della clinica" width="570" height="620">
+        <img src="assets/doctor.svg?v=20260923" alt="La dottoressa Aurora, medico della clinica" width="570" height="620" fetchpriority="high" decoding="async">
         <div class="floating-card next-visit">
           <span class="calendar-icon">⌁</span>
           <div><small>Prossima disponibilità</small><strong>Oggi, 15:30</strong></div>
@@ -142,6 +141,6 @@
 
   <!-- Simbolo SVG riutilizzabile dai pulsanti di ricerca. -->
   <svg class="svg-defs" aria-hidden="true"><symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16.5 16.5 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol></svg>
-  <script src="script.js"></script>
+  <script src="script.js?v=20260923" defer></script>
 </body>
 </html>

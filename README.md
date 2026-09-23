@@ -14,8 +14,9 @@ Clinica Aurora è un sito dimostrativo responsive per una clinica: presenta i se
 6. [Funzionamento del server ASP.NET Core](#funzionamento-del-server-aspnet-core)
 7. [Server Node.js alternativo](#server-nodejs-alternativo)
 8. [Personalizzazione](#personalizzazione)
-9. [Limiti della demo e passaggio alla produzione](#limiti-della-demo-e-passaggio-alla-produzione)
-10. [Risoluzione dei problemi](#risoluzione-dei-problemi)
+9. [Ottimizzazioni delle prestazioni](#ottimizzazioni-delle-prestazioni)
+10. [Limiti della demo e passaggio alla produzione](#limiti-della-demo-e-passaggio-alla-produzione)
+11. [Risoluzione dei problemi](#risoluzione-dei-problemi)
 
 ## Cosa fa il programma
 
@@ -224,6 +225,22 @@ Occorre almeno:
 
 La validazione nel browser non sostituisce mai quella sul server.
 
+## Ottimizzazioni delle prestazioni
+
+Il progetto applica le ottimizzazioni adatte alle sue dimensioni senza introdurre un processo di build o dipendenze aggiuntive:
+
+- **Compressione HTTP:** ASP.NET Core negozia Brotli/Gzip tramite `AddResponseCompression`; il server Node alternativo supporta Gzip per HTML, CSS, JavaScript, JSON e SVG.
+- **Cache differenziata:** `index.html` viene rivalidato, mentre CSS, JavaScript e SVG con parametro `?v=` ricevono `max-age=31536000, immutable`. Quando un asset cambia, bisogna aggiornare il valore versione in `index.html`.
+- **Nessun font remoto:** la grafica usa lo stack tipografico del sistema, eliminando richieste a Google Fonts, dipendenze di rete e possibili ritardi nel testo.
+- **Risorsa principale prioritaria:** l'SVG della hero dichiara dimensioni, `fetchpriority="high"` e decodifica asincrona; non usa lazy loading perché appare immediatamente.
+- **JavaScript non bloccante:** lo script usa `defer` e viene eseguito dopo il parsing del documento.
+- **Animazioni efficienti:** `IntersectionObserver` rimuove dall'osservazione ogni elemento dopo la prima animazione; `prefers-reduced-motion` continua a tutelare chi riduce i movimenti.
+- **Header di sicurezza:** entrambi i server inviano CSP, `nosniff`, Referrer Policy e Permissions Policy. Oltre a ridurre la superficie d'attacco, la CSP impedisce caricamenti accidentali da origini non autorizzate.
+
+Durante lo sviluppo, dopo una modifica a `styles.css`, `script.js` o `doctor.svg`, incrementa la versione usata negli URL, per esempio da `?v=20260923` a `?v=20260924`. In questo modo i browser scaricano il nuovo contenuto pur mantenendo efficiente la cache delle versioni precedenti.
+
+Per misurare le prestazioni reali è consigliato usare Lighthouse e la scheda Network degli strumenti di sviluppo, controllando LCP, CLS, INP, numero di richieste e byte trasferiti. Le future pagine con fotografie dovrebbero usare immagini AVIF/WebP, dimensioni esplicite, `srcset` e `loading="lazy"` soltanto sotto la piega.
+
 ## Limiti della demo e passaggio alla produzione
 
 Attualmente:
@@ -233,7 +250,7 @@ Attualmente:
 - la farmacia non contiene catalogo, carrello o pagamenti;
 - non esistono login, area paziente o area amministrativa;
 - non sono configurati database, email, logging applicativo o monitoraggio;
-- i font vengono richiesti a Google Fonts e richiedono accesso a Internet.
+- il sito usa font di sistema per restare veloce e funzionare anche senza Internet.
 
 Prima di usare il progetto in produzione servono analisi di sicurezza, informativa privacy, gestione dei cookie, conformità GDPR, protezione dei dati sanitari, backup, test automatici, HTTPS valido e servizi backend adeguati.
 
@@ -259,9 +276,9 @@ Chiudi la precedente istanza con **Arresta debug** oppure cambia `applicationUrl
 
 Arresta eventuali vecchie istanze con `Ctrl+C` e riavvia. Il server attuale usa percorsi multipiattaforma; il messaggio 403 deve comparire solo quando una richiesta tenta di leggere un file esterno a `wwwroot`.
 
-### La grafica appare senza font
+### La tipografia è leggermente diversa su due computer
 
-Il sito continua a funzionare con i font di fallback, ma Google Fonts potrebbe essere bloccato da una rete offline o aziendale. Per un'installazione completamente offline, scarica font con licenza adeguata, inseriscili in `wwwroot/assets` e dichiarali con `@font-face`.
+Il sito usa i font già installati dal sistema operativo per evitare download esterni; Windows, macOS e Linux possono quindi mostrare caratteri leggermente diversi. Se serve un'identità tipografica identica ovunque, inserisci file WOFF2 con licenza adeguata in `wwwroot/assets/fonts`, dichiarali con `@font-face` e aggiorna la versione degli asset.
 
 ## Controlli disponibili
 

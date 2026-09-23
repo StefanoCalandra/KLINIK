@@ -37,7 +37,11 @@ document.querySelectorAll('.desktop-nav a').forEach((link) => link.addEventListe
 // nell'area visibile, evitando di controllare continuamente lo scroll.
 const revealObserver = new IntersectionObserver((entries) => {
   entries.forEach((entry) => {
-    if (entry.isIntersecting) entry.target.classList.add('visible');
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      // L'animazione avviene una sola volta: non servono altre notifiche.
+      revealObserver.unobserve(entry.target);
+    }
   });
 }, { threshold: 0.12 });
 document.querySelectorAll('.reveal').forEach((element) => revealObserver.observe(element));
