@@ -2,7 +2,7 @@
 
 Clinica Aurora è un sito dimostrativo responsive per una clinica: presenta i servizi, permette di cercare una disponibilità, mostra alcuni specialisti e simula una richiesta di appuntamento. Il progetto è pronto per **Visual Studio 2026**, usa **ASP.NET Core e .NET 10** come server principale e mantiene un piccolo server Node.js come alternativa.
 
-> **Importante:** è una demo didattica. Non salva prenotazioni, non vende farmaci, non gestisce cartelle cliniche e non deve essere usata con dati sanitari reali senza un backend, autenticazione, consenso, cifratura e adeguamento normativo.
+> **Importante:** è una demo didattica. Salva richieste di appuntamento e dati di contatto nel database locale, ma non vende farmaci e non gestisce cartelle cliniche. Non deve essere esposta su Internet o usata con dati sanitari reali senza autenticazione, consenso, cifratura e adeguamento normativo.
 
 ## Indice
 
@@ -14,20 +14,22 @@ Clinica Aurora è un sito dimostrativo responsive per una clinica: presenta i se
 6. [Funzionamento del server ASP.NET Core](#funzionamento-del-server-aspnet-core)
 7. [Server Node.js alternativo](#server-nodejs-alternativo)
 8. [Personalizzazione](#personalizzazione)
-9. [Ottimizzazioni delle prestazioni](#ottimizzazioni-delle-prestazioni)
-10. [Limiti della demo e passaggio alla produzione](#limiti-della-demo-e-passaggio-alla-produzione)
-11. [Risoluzione dei problemi](#risoluzione-dei-problemi)
+9. [Database SQL Server e SSMS 21](#database-sql-server-e-ssms-21)
+10. [API CRUD](#api-crud)
+11. [Ottimizzazioni delle prestazioni](#ottimizzazioni-delle-prestazioni)
+12. [Limiti della demo e passaggio alla produzione](#limiti-della-demo-e-passaggio-alla-produzione)
+13. [Risoluzione dei problemi](#risoluzione-dei-problemi)
 
 ## Cosa fa il programma
 
-La pagina è organizzata come un sito “one page”: i collegamenti del menu scorrono verso sezioni della stessa pagina.
+La pagina è organizzata come un sito “one page”: i collegamenti del menu scorrono verso sezioni della stessa pagina. Specialità, sedi, medici, appuntamenti e prodotti sono conservati in SQL Server.
 
 - **Hero:** presenta la clinica, la prossima disponibilità e i pulsanti principali.
-- **Ricerca rapida:** raccoglie specialità, sede e data. Nella demo apre il modulo di contatto; non interroga un calendario reale.
+- **Ricerca rapida:** carica specialità, sede e medici dal database e prepara il modulo di prenotazione.
 - **Servizi:** descrive visite specialistiche, telemedicina e farmacia.
 - **Specialisti:** mostra profili e disponibilità di esempio.
 - **Farmacia:** è una vetrina grafica. Il pulsante informa che il negozio sarà disponibile in futuro.
-- **Prenotazione:** apre un elemento HTML `<dialog>`, valida nel browser i campi obbligatori e mostra una conferma locale.
+- **Prenotazione:** apre un elemento HTML `<dialog>`, valida i campi e salva la richiesta nella tabella `Appointments`.
 - **Responsive design:** il layout passa da più colonne a una colonna e il menu diventa compatto su tablet e telefoni.
 - **Accessibilità di base:** sono presenti testi alternativi, etichette, attributi ARIA e rispetto di `prefers-reduced-motion`.
 
@@ -94,7 +96,7 @@ Quando il browser apre, per esempio, `https://localhost:7043/`, avviene questa s
 6. JavaScript collega i gestori degli eventi ai pulsanti, al menu e al modulo.
 7. Se nessun file o endpoint corrisponde al percorso, `MapFallbackToFile("index.html")` riporta alla pagina principale.
 
-Il server non genera dinamicamente l'HTML e non usa un database: consegna al browser file statici, mentre l'interattività dimostrativa avviene nel browser.
+La pagina HTML rimane statica, ma JavaScript interroga le API ASP.NET Core. Le API usano Entity Framework Core per leggere e scrivere SQL Server, quindi gli aggiornamenti diventano disponibili senza modificare manualmente l'HTML.
 
 ## Architettura e responsabilità dei file
 
@@ -103,6 +105,13 @@ KLINIK/
 ├── ClinicaAurora.sln              # Soluzione aperta da Visual Studio
 ├── ClinicaAurora.csproj           # Tipo di progetto e versione .NET
 ├── Program.cs                     # Pipeline HTTP ASP.NET Core
+├── appsettings.json               # Connessione a SQL Server e logging
+├── Data/                          # DbContext e inizializzazione dei dati
+├── Models/                        # Tabelle rappresentate come classi C#
+├── Dtos/                          # Contratti JSON accettati dalle API
+├── Endpoints/                     # Operazioni CRUD HTTP
+├── database/
+│   └── schema.sql                 # Creazione manuale alternativa da SSMS
 ├── Properties/
 │   └── launchSettings.json        # URL, browser e ambiente Development
 ├── wwwroot/                       # Unica cartella pubblicamente accessibile
@@ -156,10 +165,10 @@ Il foglio di stile è diviso logicamente in quattro livelli:
 - `dialog` e `form` memorizzano riferimenti agli elementi usati più volte.
 - `querySelectorAll('[data-book]')` collega tutti i pulsanti di prenotazione a `showModal()`.
 - Il pulsante X e il clic sullo sfondo chiamano `dialog.close()`.
-- L'evento `submit` usa `preventDefault()`: non ricarica la pagina, nasconde il form e mostra la conferma. È qui che un'applicazione reale dovrebbe inviare i dati a un'API.
+- L'evento `submit` usa `preventDefault()`, costruisce il JSON e invia la prenotazione a `/api/appointments`; il codice restituito dal database viene mostrato nella conferma.
 - Il pulsante menu alterna la classe `open` e aggiorna `aria-expanded`.
 - `IntersectionObserver` aggiunge la classe `visible` agli elementi che entrano nello schermo, attivando la transizione CSS senza un listener continuo sullo scroll.
-- La ricerca rapida apre lo stesso dialog; l'icona di ricerca porta il focus al selettore della specialità; il pulsante farmacia mostra un avviso dimostrativo.
+- `loadReferenceData()` carica in parallelo specialità, sedi e medici; la ricerca filtra i medici e apre lo stesso dialog.
 
 ## Funzionamento del server ASP.NET Core
 
@@ -198,6 +207,8 @@ Il server ascolta per impostazione predefinita su `127.0.0.1:4173`. È possibile
 $env:PORT=8080; npm start
 ```
 
+Il server Node pubblica soltanto la parte grafica e non si collega a SQL Server. Per caricare o modificare i dati e registrare prenotazioni bisogna avviare il progetto ASP.NET Core da Visual Studio o con `dotnet run`.
+
 ## Personalizzazione
 
 ### Cambiare testi e sezioni
@@ -210,20 +221,144 @@ Modifica le variabili all'inizio di `wwwroot/styles.css`. Per esempio, `--green`
 
 ### Aggiungere uno specialista
 
-Duplica un elemento `<article>` dentro `.doctor-list`, modifica iniziali, nome, specialità e disponibilità. Se vengono aggiunti molti medici è consigliabile passare a dati provenienti da un database e generare le schede dinamicamente.
+Aggiungi il medico tramite `/api/doctors` oppure nella tabella `Doctors` da SSMS, indicando una specialità e una sede esistenti. La pagina genera automaticamente le schede leggendo il database.
 
-### Collegare una vera prenotazione
+### Estendere la prenotazione
 
-Occorre almeno:
+Il salvataggio di base è già collegato a SQL Server. Per un impiego reale occorre inoltre:
 
-1. creare un modello C# per i dati del paziente;
-2. esporre un endpoint POST ASP.NET Core;
-3. validare i dati anche sul server;
-4. inviare il form con `fetch()`;
-5. salvare i dati in un database;
-6. aggiungere autenticazione, autorizzazione, audit, cifratura e gestione del consenso.
+1. aggiungere un calendario con slot e durata delle prestazioni;
+2. autenticare pazienti e personale;
+3. inviare email di conferma e promemoria;
+4. registrare audit e modifiche di stato;
+5. cifrare i dati sensibili e gestire il consenso;
+6. definire conservazione, backup e cancellazione dei dati.
 
 La validazione nel browser non sostituisce mai quella sul server.
+
+## Database SQL Server e SSMS 21
+
+### Collegamento configurato
+
+L'applicazione usa Entity Framework Core con il provider SQL Server. La stringa di connessione in `appsettings.json` è già configurata per:
+
+```text
+Server:   STEFANO-PC\SQLEXPRESS
+Database: KlinikDb
+Accesso:  Autenticazione di Windows
+```
+
+La stringa completa è:
+
+```text
+Server=STEFANO-PC\SQLEXPRESS;Database=KlinikDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True
+```
+
+`Trusted_Connection=True` significa che SQL Server usa l'account Windows con cui viene avviato Visual Studio. Non vengono salvate password nel repository.
+
+### Preparazione di SQL Server Express
+
+1. Apri **SQL Server Configuration Manager**.
+2. Verifica che il servizio **SQL Server (SQLEXPRESS)** sia in esecuzione.
+3. Apri **SQL Server Management Studio 21**.
+4. In **Nome server** inserisci `STEFANO-PC\SQLEXPRESS`.
+5. Seleziona **Autenticazione di Windows** e premi **Connetti**.
+6. Avvia il sito da Visual Studio. Al primo avvio Entity Framework crea automaticamente `KlinikDb`, tabelle, relazioni, indici e dati iniziali.
+7. In SSMS fai clic destro su **Database** e scegli **Aggiorna** per vedere `KlinikDb`.
+
+L'account Windows che esegue il progetto deve avere il permesso di creare il database. Se non lo possiede, un amministratore può eseguire `database/schema.sql` in SSMS. Lo script è alternativo alla creazione automatica: non va eseguito dopo che Entity Framework ha già creato il database.
+
+### Tabelle
+
+| Tabella | Contenuto | Relazioni principali |
+|---|---|---|
+| `Specialties` | Specialità della clinica | Uno-a-molti con `Doctors` |
+| `Locations` | Sedi fisiche e telemedicina | Uno-a-molti con `Doctors` |
+| `Doctors` | Medici, biografia e disponibilità | Collegata a specialità e sede |
+| `Appointments` | Paziente, recapiti, data, stato e note | Collegata a un medico |
+| `PharmacyProducts` | Catalogo, prezzo, giacenza e stato | Indipendente |
+
+La coppia `DoctorId` + `AppointmentDate` è univoca: SQL Server impedisce che lo stesso medico riceva due prenotazioni nello stesso istante. Le eliminazioni di specialità, sedi o medici già utilizzati vengono bloccate per non lasciare dati orfani.
+
+### Modificare i dati da SSMS
+
+In SSMS espandi **KlinikDb → Tabelle**, fai clic destro su una tabella e usa:
+
+- **Seleziona le prime 1000 righe** per consultare i dati;
+- **Modifica le prime 200 righe** per aggiungere o aggiornare manualmente;
+- **Nuova query** per eseguire istruzioni SQL controllate.
+
+Esempi:
+
+```sql
+USE KlinikDb;
+
+-- Aggiunta di una specialità
+INSERT dbo.Specialties (Name, Description)
+VALUES (N'Oculistica', N'Prevenzione e cura della vista');
+
+-- Aggiornamento della disponibilità di un medico
+UPDATE dbo.Doctors
+SET IsAvailable = 0
+WHERE Id = 1;
+
+-- Eliminazione di un prodotto non più venduto
+DELETE dbo.PharmacyProducts
+WHERE Id = 3;
+```
+
+Prima di cancellare record direttamente da SSMS, controlla sempre le relazioni. Per le normali operazioni applicative è preferibile usare le API, che applicano validazione e restituiscono errori comprensibili.
+
+### Cambiare server o istanza
+
+Modifica soltanto `ConnectionStrings:KlinikDatabase` in `appsettings.json`. Per esempio, per un'istanza locale predefinita:
+
+```json
+"KlinikDatabase": "Server=localhost;Database=KlinikDb;Trusted_Connection=True;TrustServerCertificate=True"
+```
+
+Dopo una modifica chiudi e riavvia Visual Studio. Non pubblicare mai una stringa contenente nome utente o password: in produzione usa Secret Manager, variabili d'ambiente o un archivio di segreti.
+
+## API CRUD
+
+Il backend espone API JSON complete per leggere, aggiungere, aggiornare ed eliminare i dati:
+
+| Risorsa | Indirizzo | GET | POST | PUT | DELETE |
+|---|---|:---:|:---:|:---:|:---:|
+| Specialità | `/api/specialties` | ✓ | ✓ | `/{id}` | `/{id}` |
+| Sedi | `/api/locations` | ✓ | ✓ | `/{id}` | `/{id}` |
+| Medici | `/api/doctors` | ✓ | ✓ | `/{id}` | `/{id}` |
+| Appuntamenti | `/api/appointments` | ✓ | ✓ | `/{id}` | `/{id}` |
+| Prodotti | `/api/products` | ✓ | ✓ | `/{id}` | `/{id}` |
+
+Le chiamate `GET` non modificano i dati. `POST` crea un record, `PUT` sostituisce i dati modificabili e `DELETE` elimina il record. Le risposte usano codici HTTP standard: `201` per la creazione, `204` per modifica/eliminazione, `400` per dati non validi, `404` per record inesistenti e `409` per conflitti.
+
+Esempio PowerShell per leggere i medici:
+
+```powershell
+Invoke-RestMethod https://localhost:7043/api/doctors
+```
+
+Esempio per aggiungere un prodotto:
+
+```powershell
+$prodotto = @{
+  name = "Crema viso"
+  category = "Dermocosmesi"
+  price = 22.90
+  stockQuantity = 15
+  isActive = $true
+  description = "Crema idratante quotidiana"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri https://localhost:7043/api/products `
+  -ContentType "application/json" `
+  -Body $prodotto
+```
+
+Il sito usa già queste API per caricare specialità, sedi e medici e per registrare una prenotazione. Per ragioni di sicurezza, prima di esporre il sito su Internet bisogna proteggere POST, PUT, DELETE e la lettura degli appuntamenti con autenticazione e ruoli amministrativi.
 
 ## Ottimizzazioni delle prestazioni
 
@@ -245,11 +380,11 @@ Per misurare le prestazioni reali è consigliato usare Lighthouse e la scheda Ne
 
 Attualmente:
 
-- le disponibilità e i medici sono testi statici;
-- il form non invia né conserva informazioni;
+- i medici e le prenotazioni sono nel database, ma non esiste ancora un calendario completo degli slot;
+- il form salva dati di contatto, ma non invia ancora email o promemoria;
 - la farmacia non contiene catalogo, carrello o pagamenti;
 - non esistono login, area paziente o area amministrativa;
-- non sono configurati database, email, logging applicativo o monitoraggio;
+- SQL Server è configurato, mentre email, audit applicativo e monitoraggio non lo sono ancora;
 - il sito usa font di sistema per restare veloce e funzionare anche senza Internet.
 
 Prima di usare il progetto in produzione servono analisi di sicurezza, informativa privacy, gestione dei cookie, conformità GDPR, protezione dei dati sanitari, backup, test automatici, HTTPS valido e servizi backend adeguati.

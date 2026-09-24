@@ -7,7 +7,7 @@
   <title>Clinica Aurora — La salute, più vicina</title>
   <!-- Gli asset hanno una versione nella query: il browser può conservarli a
        lungo e scaricarli di nuovo solo quando questo valore viene aggiornato. -->
-  <link rel="stylesheet" href="styles.css?v=20260923">
+  <link rel="stylesheet" href="styles.css?v=20260924">
 </head>
 <body>
   <!-- Intestazione: marchio, collegamenti alle sezioni e azioni principali. -->
@@ -49,7 +49,7 @@
       </div>
       <div class="hero-visual reveal">
         <div class="soft-shape"></div>
-        <img src="assets/doctor.svg?v=20260923" alt="La dottoressa Aurora, medico della clinica" width="570" height="620" fetchpriority="high" decoding="async">
+        <img src="assets/doctor.svg?v=20260924" alt="La dottoressa Aurora, medico della clinica" width="570" height="620" fetchpriority="high" decoding="async">
         <div class="floating-card next-visit">
           <span class="calendar-icon">⌁</span>
           <div><small>Prossima disponibilità</small><strong>Oggi, 15:30</strong></div>
@@ -64,8 +64,8 @@
 
     <!-- Ricerca rapida dimostrativa: la conferma apre il modulo di contatto. -->
     <section class="quick-search" aria-label="Ricerca rapida">
-      <div><span class="search-step">01</span><label for="specialty">Di cosa hai bisogno?</label><select id="specialty"><option>Scegli la specialità</option><option>Cardiologia</option><option>Dermatologia</option><option>Pediatria</option><option>Medicina generale</option></select></div>
-      <div><span class="search-step">02</span><label for="location">Dove?</label><select id="location"><option>Milano, Centro</option><option>Milano, Navigli</option><option>Online</option></select></div>
+      <div><span class="search-step">01</span><label for="specialty">Di cosa hai bisogno?</label><select id="specialty"><option value="">Caricamento specialità…</option></select></div>
+      <div><span class="search-step">02</span><label for="location">Dove?</label><select id="location"><option value="">Caricamento sedi…</option></select></div>
       <div><span class="search-step">03</span><label for="date">Quando?</label><input id="date" type="date"></div>
       <button class="search-btn" id="findVisit"><svg aria-hidden="true"><use href="#icon-search"/></svg><span>Cerca disponibilità</span></button>
     </section>
@@ -101,7 +101,7 @@
         <ul class="check-list"><li>Professionisti verificati</li><li>Tempi di attesa ridotti</li><li>Assistenza dedicata</li></ul>
         <button class="btn btn-outline" data-book>Trova il tuo specialista →</button>
       </div>
-      <div class="doctor-list reveal">
+      <div class="doctor-list reveal" id="doctorList" aria-live="polite">
         <article><div class="doctor-avatar blue">LF</div><div><h3>Dott.ssa Laura Ferri</h3><p>Cardiologia</p></div><span>Disponibile oggi</span></article>
         <article><div class="doctor-avatar peach">MR</div><div><h3>Dott. Marco Riva</h3><p>Dermatologia</p></div><span>Disponibile domani</span></article>
         <article><div class="doctor-avatar mint">SB</div><div><h3>Dott.ssa Sara Bianchi</h3><p>Pediatria</p></div><span>Disponibile oggi</span></article>
@@ -135,12 +135,21 @@
   <dialog id="bookingDialog">
     <button class="dialog-close" aria-label="Chiudi">×</button>
     <span class="kicker">PRENOTA ORA</span><h2>Come possiamo aiutarti?</h2><p>Lascia i tuoi dati: ti ricontatteremo per confermare la visita.</p>
-    <form id="bookingForm"><label>Nome e cognome<input name="name" required placeholder="Mario Rossi"></label><label>Telefono<input name="phone" required type="tel" placeholder="+39 333 000 0000"></label><label>Specialità<select name="area" required><option value="">Seleziona</option><option>Cardiologia</option><option>Dermatologia</option><option>Pediatria</option><option>Medicina generale</option></select></label><button class="btn btn-primary" type="submit">Richiedi appuntamento →</button></form>
-    <div class="success-message" hidden><span>✓</span><h3>Richiesta ricevuta!</h3><p>Ti contatteremo al più presto.</p></div>
+    <form id="bookingForm">
+      <label>Nome e cognome<input name="patientName" required maxlength="120" autocomplete="name" placeholder="Mario Rossi"></label>
+      <label>Telefono<input name="phone" required maxlength="30" type="tel" autocomplete="tel" placeholder="+39 333 000 0000"></label>
+      <label>Email<input name="email" maxlength="150" type="email" autocomplete="email" placeholder="mario@esempio.it"></label>
+      <label>Medico<select name="doctorId" id="bookingDoctor" required><option value="">Seleziona un medico</option></select></label>
+      <label>Data e ora<input name="appointmentDate" id="bookingDate" required type="datetime-local"></label>
+      <label>Note<textarea name="notes" maxlength="1000" rows="3" placeholder="Informazioni utili per la visita (facoltative)"></textarea></label>
+      <p class="form-error" role="alert" hidden></p>
+      <button class="btn btn-primary" type="submit">Richiedi appuntamento →</button>
+    </form>
+    <div class="success-message" hidden><span>✓</span><h3>Richiesta registrata!</h3><p>Codice prenotazione: <strong id="bookingReference"></strong></p></div>
   </dialog>
 
   <!-- Simbolo SVG riutilizzabile dai pulsanti di ricerca. -->
   <svg class="svg-defs" aria-hidden="true"><symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16.5 16.5 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol></svg>
-  <script src="script.js?v=20260923" defer></script>
+  <script src="script.js?v=20260924" defer></script>
 </body>
 </html>
