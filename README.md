@@ -395,6 +395,18 @@ Prima di usare il progetto in produzione servono analisi di sicurezza, informati
 
 Verifica di aver aperto `ClinicaAurora.sln`, di avere il workload **Sviluppo ASP.NET e Web** e che `dotnet --list-sdks` mostri una versione 10.x.
 
+### Errore “Globalization Invariant Mode is not supported”
+
+Il provider SQL Server necessita dei dati di globalizzazione completi di .NET. Il progetto non abilita più `InvariantGlobalization`, quindi dopo aver ricevuto questo errore:
+
+1. arresta il debug;
+2. in Visual Studio scegli **Compilazione → Pulisci soluzione**;
+3. elimina, se presenti, le cartelle `bin` e `obj`;
+4. scegli **Compilazione → Ricompila soluzione**;
+5. premi nuovamente **F5**.
+
+Non aggiungere `<InvariantGlobalization>true</InvariantGlobalization>` al file `.csproj`, perché non è compatibile con `Microsoft.Data.SqlClient` usato da Entity Framework Core SQL Server.
+
 ### Il browser segnala un certificato non attendibile
 
 È normale con un certificato locale non ancora autorizzato. Dal terminale per sviluppatori puoi eseguire:
