@@ -4,6 +4,7 @@ cd /d "%~dp0"
 where dotnet >nul 2>nul
 if not errorlevel 1 (
   echo Avvio di Clinica Aurora con ASP.NET Core...
+  set "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=0"
   dotnet run --project ClinicaAurora.csproj
   pause
   exit /b %errorlevel%

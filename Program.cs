@@ -2,6 +2,11 @@ using ClinicaAurora.Data;
 using ClinicaAurora.Endpoints;
 using Microsoft.EntityFrameworkCore;
 
+// Deve essere eseguito prima che Microsoft.Data.SqlClient inizializzi il proprio
+// supporto globale. Il runtimeconfig e il pacchetto ICU applicano la stessa
+// configurazione ancora prima dell'ingresso nel metodo Main.
+AppContext.SetSwitch("System.Globalization.Invariant", false);
+
 // Crea l'applicazione ASP.NET Core leggendo configurazione, profilo di avvio
 // ed eventuali variabili d'ambiente fornite da Visual Studio.
 var builder = WebApplication.CreateBuilder(args);

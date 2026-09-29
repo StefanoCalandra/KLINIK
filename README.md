@@ -407,6 +407,18 @@ Il provider SQL Server necessita dei dati di globalizzazione completi di .NET. I
 
 Non aggiungere `<InvariantGlobalization>true</InvariantGlobalization>` al file `.csproj`, perché non è compatibile con `Microsoft.Data.SqlClient` usato da Entity Framework Core SQL Server.
 
+Il progetto forza inoltre la modalità completa in tre punti, così anche una configurazione globale del computer non prevale durante l'avvio da Visual Studio:
+
+- `<InvariantGlobalization>false</InvariantGlobalization>` nelle proprietà MSBuild;
+- `System.Globalization.Invariant=false` nel file `runtimeconfig.json` generato;
+- `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=0` nel profilo di avvio.
+
+Il progetto include ora anche il pacchetto app-local `Microsoft.ICU.ICU4C.Runtime`: in questo modo ICU viene ripristinato insieme ai pacchetti NuGet e distribuito con l'applicazione, senza richiedere un'installazione manuale nel sistema. `System.Globalization.AppLocalIcu=72.1` indica al runtime di usare questa copia. Questa soluzione applica direttamente il suggerimento relativo a ICU ed è utile anche qualora l'ambiente Windows o un futuro container non esponga correttamente i dati di globalizzazione.
+
+Dopo l'aggiornamento, fai clic destro sulla soluzione e scegli **Ripristina pacchetti NuGet**, quindi elimina `bin` e `obj` e ricompila. In `bin/Debug/net10.0` dovranno essere presenti anche le librerie native ICU fornite dal pacchetto.
+
+Se l'eccezione persiste, apri **Proprietà di sistema → Variabili d'ambiente** e cerca `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT`. Eliminala se vale `1` oppure impostala a `0`, quindi chiudi e riapri completamente Visual Studio.
+
 ### Il browser segnala un certificato non attendibile
 
 È normale con un certificato locale non ancora autorizzato. Dal terminale per sviluppatori puoi eseguire:
