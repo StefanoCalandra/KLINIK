@@ -20,4 +20,7 @@
     <RuntimeHostConfigurationOption Include="System.Globalization.Invariant" Value="false" />
     <RuntimeHostConfigurationOption Include="System.Globalization.AppLocalIcu" Value="72.1" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="database\stored-procedures.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

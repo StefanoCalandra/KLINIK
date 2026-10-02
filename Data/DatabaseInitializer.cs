@@ -1,5 +1,6 @@
 using ClinicaAurora.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 namespace ClinicaAurora.Data;
 
@@ -11,29 +12,44 @@ public static class DatabaseInitializer
         // di uno schema in produzione è preferibile usare le migration EF Core.
         await db.Database.EnsureCreatedAsync();
 
-        if (await db.Specialties.AnyAsync()) return;
+        if (!await db.Specialties.AnyAsync())
+        {
+            var cardiology = new Specialty { Name = "Cardiologia", Description = "Prevenzione e cura cardiovascolare" };
+            var dermatology = new Specialty { Name = "Dermatologia", Description = "Salute della pelle" };
+            var pediatrics = new Specialty { Name = "Pediatria", Description = "Cura dei bambini e adolescenti" };
+            var general = new Specialty { Name = "Medicina generale", Description = "Visite e prevenzione" };
+            var center = new Location { Name = "Milano, Centro", Address = "Via della Salute 12", City = "Milano" };
+            var navigli = new Location { Name = "Milano, Navigli", Address = "Alzaia Naviglio 24", City = "Milano" };
+            var online = new Location { Name = "Online", City = "Telemedicina" };
 
-        var cardiology = new Specialty { Name = "Cardiologia", Description = "Prevenzione e cura cardiovascolare" };
-        var dermatology = new Specialty { Name = "Dermatologia", Description = "Salute della pelle" };
-        var pediatrics = new Specialty { Name = "Pediatria", Description = "Cura dei bambini e adolescenti" };
-        var general = new Specialty { Name = "Medicina generale", Description = "Visite e prevenzione" };
-        var center = new Location { Name = "Milano, Centro", Address = "Via della Salute 12", City = "Milano" };
-        var navigli = new Location { Name = "Milano, Navigli", Address = "Alzaia Naviglio 24", City = "Milano" };
-        var online = new Location { Name = "Online", City = "Telemedicina" };
+            db.AddRange(cardiology, dermatology, pediatrics, general, center, navigli, online);
+            await db.SaveChangesAsync();
 
-        db.AddRange(cardiology, dermatology, pediatrics, general, center, navigli, online);
-        await db.SaveChangesAsync();
+            db.Doctors.AddRange(
+                new Doctor { FullName = "Dott.ssa Laura Ferri", SpecialtyId = cardiology.Id, LocationId = center.Id, Biography = "Specialista in cardiologia clinica." },
+                new Doctor { FullName = "Dott. Marco Riva", SpecialtyId = dermatology.Id, LocationId = navigli.Id, Biography = "Specialista in dermatologia e prevenzione." },
+                new Doctor { FullName = "Dott.ssa Sara Bianchi", SpecialtyId = pediatrics.Id, LocationId = center.Id, Biography = "Specialista in pediatria." });
 
-        db.Doctors.AddRange(
-            new Doctor { FullName = "Dott.ssa Laura Ferri", SpecialtyId = cardiology.Id, LocationId = center.Id, Biography = "Specialista in cardiologia clinica." },
-            new Doctor { FullName = "Dott. Marco Riva", SpecialtyId = dermatology.Id, LocationId = navigli.Id, Biography = "Specialista in dermatologia e prevenzione." },
-            new Doctor { FullName = "Dott.ssa Sara Bianchi", SpecialtyId = pediatrics.Id, LocationId = center.Id, Biography = "Specialista in pediatria." });
+            db.PharmacyProducts.AddRange(
+                new PharmacyProduct { Name = "Vitamina D3", Category = "Integratori", Price = 14.90m, StockQuantity = 30, Description = "Integratore alimentare di vitamina D3." },
+                new PharmacyProduct { Name = "Magnesio", Category = "Integratori", Price = 11.50m, StockQuantity = 24, Description = "Supporto per energia e funzione muscolare." },
+                new PharmacyProduct { Name = "Crema corpo", Category = "Dermocosmesi", Price = 18.00m, StockQuantity = 18, Description = "Crema corpo idratante." });
 
-        db.PharmacyProducts.AddRange(
-            new PharmacyProduct { Name = "Vitamina D3", Category = "Integratori", Price = 14.90m, StockQuantity = 30, Description = "Integratore alimentare di vitamina D3." },
-            new PharmacyProduct { Name = "Magnesio", Category = "Integratori", Price = 11.50m, StockQuantity = 24, Description = "Supporto per energia e funzione muscolare." },
-            new PharmacyProduct { Name = "Crema corpo", Category = "Dermocosmesi", Price = 18.00m, StockQuantity = 18, Description = "Crema corpo idratante." });
+            await db.SaveChangesAsync();
+        }
 
-        await db.SaveChangesAsync();
+        await InstallStoredProceduresAsync(db);
+    }
+
+    private static async Task InstallStoredProceduresAsync(KlinikDbContext db)
+    {
+        var scriptPath = Path.Combine(AppContext.BaseDirectory, "database", "stored-procedures.sql");
+        if (!File.Exists(scriptPath))
+            throw new FileNotFoundException("Script delle stored procedure non trovato.", scriptPath);
+
+        var script = await File.ReadAllTextAsync(scriptPath);
+        var batches = Regex.Split(script, @"^\s*GO\s*(?:--.*)?$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+        foreach (var batch in batches.Where(value => !string.IsNullOrWhiteSpace(value)))
+            await db.Database.ExecuteSqlRawAsync(batch);
     }
 }

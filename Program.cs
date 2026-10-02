@@ -1,5 +1,6 @@
 using ClinicaAurora.Data;
 using ClinicaAurora.Endpoints;
+using ClinicaAurora.Services;
 using Microsoft.EntityFrameworkCore;
 
 // Deve essere eseguito prima che Microsoft.Data.SqlClient inizializzi il proprio
@@ -16,6 +17,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddResponseCompression(options => options.EnableForHttps = true);
 builder.Services.AddDbContext<KlinikDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("KlinikDatabase")));
+builder.Services.AddScoped<ClinicStoredProcedures>();
 
 var app = builder.Build();
 

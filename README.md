@@ -111,7 +111,8 @@ KLINIK/
 ├── Dtos/                          # Contratti JSON accettati dalle API
 ├── Endpoints/                     # Operazioni CRUD HTTP
 ├── database/
-│   └── schema.sql                 # Creazione manuale alternativa da SSMS
+│   ├── schema.sql                 # Creazione manuale alternativa da SSMS
+│   └── stored-procedures.sql      # Procedure e indici usati dalle API
 ├── Properties/
 │   └── launchSettings.json        # URL, browser e ambiente Development
 ├── wwwroot/                       # Unica cartella pubblicamente accessibile
@@ -359,6 +360,42 @@ Invoke-RestMethod `
 ```
 
 Il sito usa già queste API per caricare specialità, sedi e medici e per registrare una prenotazione. Per ragioni di sicurezza, prima di esporre il sito su Internet bisogna proteggere POST, PUT, DELETE e la lettura degli appuntamenti con autenticazione e ruoli amministrativi.
+
+### Stored procedure utilizzate dal sito
+
+Il backend chiama direttamente le seguenti procedure:
+
+| Procedura | Utilizzo |
+|---|---|
+| `usp_Doctor_Search` | Filtra i medici per specialità, sede e disponibilità |
+| `usp_Appointment_GetRange` | Recupera l'agenda in un intervallo temporale |
+| `usp_Appointment_Create` | Registra atomicamente una prenotazione |
+| `usp_Appointment_Cancel` | Annulla senza eliminare lo storico |
+| `usp_Appointment_SetStatus` | Cambia lo stato con valori controllati |
+| `usp_Product_GetAvailable` | Cerca prodotti attivi e disponibili |
+| `usp_Product_DecreaseStock` | Scala la giacenza in modo atomico |
+
+`Data/DatabaseInitializer.cs` esegue automaticamente `database/stored-procedures.sql` dopo la creazione e il popolamento del database. Lo script usa `CREATE OR ALTER` e controlla l'esistenza degli indici, quindi può essere eseguito più volte senza duplicare gli oggetti.
+
+Sono disponibili inoltre questi indirizzi specializzati:
+
+```text
+POST /api/appointments/{id}/cancel
+PUT  /api/appointments/{id}/status
+POST /api/products/{id}/decrease-stock
+```
+
+Esempio di aggiornamento dello stato:
+
+```powershell
+Invoke-RestMethod `
+  -Method Put `
+  -Uri https://localhost:7043/api/appointments/1/status `
+  -ContentType "application/json" `
+  -Body '{"status":"Confermata"}'
+```
+
+La normale `DELETE /api/appointments/{id}` rimane disponibile per amministrazione e test, ma il flusso applicativo dovrebbe preferire `/cancel`, così lo storico viene conservato.
 
 ## Ottimizzazioni delle prestazioni
 

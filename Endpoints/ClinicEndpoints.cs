@@ -1,7 +1,9 @@
 using ClinicaAurora.Data;
 using ClinicaAurora.Dtos;
 using ClinicaAurora.Models;
+using ClinicaAurora.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 
 namespace ClinicaAurora.Endpoints;
 
@@ -78,17 +80,8 @@ public static class ClinicEndpoints
     private static void MapDoctors(RouteGroupBuilder api)
     {
         var group = api.MapGroup("/doctors");
-        group.MapGet("/", async (int? specialtyId, int? locationId, KlinikDbContext db) =>
-        {
-            var query = db.Doctors.AsNoTracking().AsQueryable();
-            if (specialtyId.HasValue) query = query.Where(x => x.SpecialtyId == specialtyId);
-            if (locationId.HasValue) query = query.Where(x => x.LocationId == locationId);
-            return await query.OrderBy(x => x.FullName).Select(x => new
-            {
-                x.Id, x.FullName, x.Biography, x.IsAvailable, x.SpecialtyId,
-                Specialty = x.Specialty!.Name, x.LocationId, Location = x.Location!.Name
-            }).ToListAsync();
-        });
+        group.MapGet("/", async (int? specialtyId, int? locationId, bool? onlyAvailable, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
+            await procedures.SearchDoctorsAsync(specialtyId, locationId, onlyAvailable ?? false, cancellationToken));
         group.MapGet("/{id:int}", async (int id, KlinikDbContext db) =>
         {
             var item = await db.Doctors.AsNoTracking().Where(x => x.Id == id).Select(x => new
@@ -119,16 +112,13 @@ public static class ClinicEndpoints
     private static void MapAppointments(RouteGroupBuilder api)
     {
         var group = api.MapGroup("/appointments");
-        group.MapGet("/", async (DateTime? from, DateTime? to, KlinikDbContext db) =>
+        group.MapGet("/", async (DateTime? from, DateTime? to, int? doctorId, string? status, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
         {
-            var query = db.Appointments.AsNoTracking().AsQueryable();
-            if (from.HasValue) query = query.Where(x => x.AppointmentDate >= from);
-            if (to.HasValue) query = query.Where(x => x.AppointmentDate <= to);
-            return await query.OrderBy(x => x.AppointmentDate).Select(x => new
-            {
-                x.Id, x.PatientName, x.Phone, x.Email, x.AppointmentDate, x.Status,
-                x.Notes, x.DoctorId, Doctor = x.Doctor!.FullName, Specialty = x.Doctor.Specialty!.Name, x.CreatedAt
-            }).ToListAsync();
+            var rangeFrom = from ?? DateTime.Today.AddYears(-1);
+            var rangeTo = to ?? DateTime.Today.AddYears(5);
+            if (rangeFrom >= rangeTo) return Results.ValidationProblem(new Dictionary<string, string[]> { ["range"] = ["L'intervallo di date non è valido."] });
+            var results = await procedures.GetAppointmentsAsync(rangeFrom, rangeTo, doctorId, status, cancellationToken);
+            return Results.Ok(results);
         });
         group.MapGet("/{id:int}", async (int id, KlinikDbContext db) =>
         {
@@ -140,14 +130,17 @@ public static class ClinicEndpoints
             if (item is null) return Results.NotFound();
             return Results.Ok(item);
         });
-        group.MapPost("/", async (AppointmentRequest request, KlinikDbContext db) =>
+        group.MapPost("/", async (AppointmentRequest request, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
         {
-            var error = await ValidateAppointmentAsync(request, db); if (error is not null) return error;
-            var item = ToAppointment(request);
-            db.Appointments.Add(item);
-            try { await db.SaveChangesAsync(); }
-            catch (DbUpdateException) { return Results.Conflict(new { message = "Questo orario non è più disponibile." }); }
-            return Results.Created($"/api/appointments/{item.Id}", new { item.Id, item.Status });
+            try
+            {
+                var result = await procedures.CreateAppointmentAsync(request, cancellationToken);
+                return Results.Created($"/api/appointments/{result.Id}", result);
+            }
+            catch (SqlException exception) when (exception.Number is >= 50001 and <= 50005)
+            {
+                return StoredProcedureProblem(exception);
+            }
         });
         group.MapPut("/{id:int}", async (int id, AppointmentRequest request, KlinikDbContext db) =>
         {
@@ -160,17 +153,28 @@ public static class ClinicEndpoints
             catch (DbUpdateException) { return Results.Conflict(new { message = "Questo orario non è più disponibile." }); }
             return Results.NoContent();
         });
+        group.MapPost("/{id:int}/cancel", async (int id, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
+        {
+            try { await procedures.CancelAppointmentAsync(id, cancellationToken); return Results.NoContent(); }
+            catch (SqlException exception) when (exception.Number is >= 50000 and <= 59999) { return StoredProcedureProblem(exception); }
+        });
+        group.MapPut("/{id:int}/status", async (int id, AppointmentStatusRequest request, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
+        {
+            try { await procedures.SetAppointmentStatusAsync(id, request.Status, cancellationToken); return Results.NoContent(); }
+            catch (SqlException exception) when (exception.Number is >= 50000 and <= 59999) { return StoredProcedureProblem(exception); }
+        });
+        // DELETE resta disponibile per l'amministrazione; il sito deve preferire /cancel per conservare lo storico.
         group.MapDelete("/{id:int}", (int id, KlinikDbContext db) => DeleteAsync(db, db.Appointments, id));
     }
 
     private static void MapProducts(RouteGroupBuilder api)
     {
         var group = api.MapGroup("/products");
-        group.MapGet("/", async (bool? active, KlinikDbContext db) =>
+        group.MapGet("/", async (bool? active, string? category, string? search, KlinikDbContext db, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
         {
+            if (active is not false) return Results.Ok(await procedures.GetAvailableProductsAsync(category, search, cancellationToken));
             var query = db.PharmacyProducts.AsNoTracking().AsQueryable();
-            if (active.HasValue) query = query.Where(x => x.IsActive == active);
-            return await query.OrderBy(x => x.Name).ToListAsync();
+            return Results.Ok(await query.OrderBy(x => x.Name).ToListAsync(cancellationToken));
         });
         group.MapGet("/{id:int}", async (int id, KlinikDbContext db) =>
         {
@@ -192,6 +196,11 @@ public static class ClinicEndpoints
             await db.SaveChangesAsync(); return Results.NoContent();
         });
         group.MapDelete("/{id:int}", (int id, KlinikDbContext db) => DeleteAsync(db, db.PharmacyProducts, id));
+        group.MapPost("/{id:int}/decrease-stock", async (int id, StockRequest request, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
+        {
+            try { return Results.Ok(await procedures.DecreaseStockAsync(id, request.Quantity, cancellationToken)); }
+            catch (SqlException exception) when (exception.Number is >= 50000 and <= 59999) { return StoredProcedureProblem(exception); }
+        });
     }
 
     private static async Task<IResult?> ValidateDoctorAsync(DoctorRequest request, KlinikDbContext db)
@@ -218,13 +227,6 @@ public static class ClinicEndpoints
         return null;
     }
 
-    private static Appointment ToAppointment(AppointmentRequest request) => new()
-    {
-        PatientName = request.PatientName.Trim(), Phone = request.Phone.Trim(), Email = request.Email?.Trim(),
-        AppointmentDate = request.AppointmentDate, Status = string.IsNullOrWhiteSpace(request.Status) ? "In attesa" : request.Status.Trim(),
-        Notes = request.Notes?.Trim(), DoctorId = request.DoctorId
-    };
-
     private static PharmacyProduct ToProduct(ProductRequest request) => new()
     {
         Name = request.Name.Trim(), Category = request.Category.Trim(), Price = request.Price,
@@ -232,6 +234,9 @@ public static class ClinicEndpoints
     };
 
     private static IResult Validation(string message) => Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [message] });
+
+    private static IResult StoredProcedureProblem(SqlException exception) =>
+        Results.Problem(title: "Operazione rifiutata dal database", detail: exception.Message, statusCode: StatusCodes.Status409Conflict);
 
     private static async Task<IResult> DeleteAsync<TEntity>(KlinikDbContext db, DbSet<TEntity> set, int id) where TEntity : class
     {
