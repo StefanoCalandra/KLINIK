@@ -13,4 +13,5 @@ public sealed class Specialty
     public string? Description { get; set; }
 
     public ICollection<Doctor> Doctors { get; set; } = [];
+    public ICollection<MedicalService> MedicalServices { get; set; } = [];
 }

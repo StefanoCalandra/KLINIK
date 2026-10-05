@@ -7,3 +7,5 @@ public sealed record AppointmentRequest(string PatientName, string Phone, string
 public sealed record ProductRequest(string Name, string Category, decimal Price, int StockQuantity, bool IsActive, string? Description);
 public sealed record AppointmentStatusRequest(string Status);
 public sealed record StockRequest(int Quantity);
+public sealed record MedicalServiceRequest(string Name, string? Description, int DurationMinutes, decimal Price, bool IsActive, int SpecialtyId);
+public sealed record DoctorScheduleRequest(int DoctorId, DayOfWeek DayOfWeek, TimeOnly StartTime, TimeOnly EndTime, int SlotDurationMinutes, bool IsActive);

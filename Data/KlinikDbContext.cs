@@ -10,6 +10,9 @@ public sealed class KlinikDbContext(DbContextOptions<KlinikDbContext> options) :
     public DbSet<Doctor> Doctors => Set<Doctor>();
     public DbSet<Appointment> Appointments => Set<Appointment>();
     public DbSet<PharmacyProduct> PharmacyProducts => Set<PharmacyProduct>();
+    public DbSet<MedicalService> MedicalServices => Set<MedicalService>();
+    public DbSet<DoctorService> DoctorServices => Set<DoctorService>();
+    public DbSet<DoctorSchedule> DoctorSchedules => Set<DoctorSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +35,30 @@ public sealed class KlinikDbContext(DbContextOptions<KlinikDbContext> options) :
             .OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Appointment>()
             .HasIndex(item => new { item.DoctorId, item.AppointmentDate })
+            .IsUnique();
+        modelBuilder.Entity<MedicalService>()
+            .HasOne(item => item.Specialty)
+            .WithMany(item => item.MedicalServices)
+            .HasForeignKey(item => item.SpecialtyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<DoctorService>().HasKey(item => new { item.DoctorId, item.MedicalServiceId });
+        modelBuilder.Entity<DoctorService>()
+            .HasOne(item => item.Doctor)
+            .WithMany(item => item.DoctorServices)
+            .HasForeignKey(item => item.DoctorId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<DoctorService>()
+            .HasOne(item => item.MedicalService)
+            .WithMany(item => item.DoctorServices)
+            .HasForeignKey(item => item.MedicalServiceId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<DoctorSchedule>()
+            .HasOne(item => item.Doctor)
+            .WithMany(item => item.Schedules)
+            .HasForeignKey(item => item.DoctorId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<DoctorSchedule>()
+            .HasIndex(item => new { item.DoctorId, item.DayOfWeek, item.StartTime })
             .IsUnique();
     }
 }

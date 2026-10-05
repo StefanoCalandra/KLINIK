@@ -38,14 +38,15 @@ public static class DatabaseInitializer
             await db.SaveChangesAsync();
         }
 
-        await InstallStoredProceduresAsync(db);
+        await ExecuteSqlScriptAsync(db, "expansion.sql");
+        await ExecuteSqlScriptAsync(db, "stored-procedures.sql");
     }
 
-    private static async Task InstallStoredProceduresAsync(KlinikDbContext db)
+    private static async Task ExecuteSqlScriptAsync(KlinikDbContext db, string fileName)
     {
-        var scriptPath = Path.Combine(AppContext.BaseDirectory, "database", "stored-procedures.sql");
+        var scriptPath = Path.Combine(AppContext.BaseDirectory, "database", fileName);
         if (!File.Exists(scriptPath))
-            throw new FileNotFoundException("Script delle stored procedure non trovato.", scriptPath);
+            throw new FileNotFoundException($"Script SQL {fileName} non trovato.", scriptPath);
 
         var script = await File.ReadAllTextAsync(scriptPath);
         var batches = Regex.Split(script, @"^\s*GO\s*(?:--.*)?$", RegexOptions.Multiline | RegexOptions.IgnoreCase);

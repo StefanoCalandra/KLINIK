@@ -11,3 +11,7 @@ Non eseguire lo script dopo che l'applicazione ha già creato e popolato il data
 `stored-procedures.sql` contiene le procedure e gli indici usati dal backend.
 Viene copiato nell'output ed eseguito automaticamente a ogni avvio con istruzioni
 idempotenti `CREATE OR ALTER`; può anche essere eseguito manualmente da SSMS.
+
+`expansion.sql` aggiunge prestazioni mediche, associazioni medico-prestazione,
+turni settimanali e un catalogo dimostrativo più ampio. È idempotente e viene
+eseguito automaticamente prima delle stored procedure.

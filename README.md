@@ -112,6 +112,7 @@ KLINIK/
 ├── Endpoints/                     # Operazioni CRUD HTTP
 ├── database/
 │   ├── schema.sql                 # Creazione manuale alternativa da SSMS
+│   ├── expansion.sql              # Tabelle e dati aggiuntivi idempotenti
 │   └── stored-procedures.sql      # Procedure e indici usati dalle API
 ├── Properties/
 │   └── launchSettings.json        # URL, browser e ambiente Development
@@ -278,6 +279,9 @@ L'account Windows che esegue il progetto deve avere il permesso di creare il dat
 | `Doctors` | Medici, biografia e disponibilità | Collegata a specialità e sede |
 | `Appointments` | Paziente, recapiti, data, stato e note | Collegata a un medico |
 | `PharmacyProducts` | Catalogo, prezzo, giacenza e stato | Indipendente |
+| `MedicalServices` | Prestazioni, durata, prezzo e stato | Collegata a una specialità |
+| `DoctorServices` | Prestazioni effettuate dai medici | Relazione molti-a-molti |
+| `DoctorSchedules` | Giorni, orari e durata degli slot | Collegata a un medico |
 
 La coppia `DoctorId` + `AppointmentDate` è univoca: SQL Server impedisce che lo stesso medico riceva due prenotazioni nello stesso istante. Le eliminazioni di specialità, sedi o medici già utilizzati vengono bloccate per non lasciare dati orfani.
 
@@ -331,6 +335,8 @@ Il backend espone API JSON complete per leggere, aggiungere, aggiornare ed elimi
 | Medici | `/api/doctors` | ✓ | ✓ | `/{id}` | `/{id}` |
 | Appuntamenti | `/api/appointments` | ✓ | ✓ | `/{id}` | `/{id}` |
 | Prodotti | `/api/products` | ✓ | ✓ | `/{id}` | `/{id}` |
+| Prestazioni | `/api/medical-services` | ✓ | ✓ | `/{id}` | `/{id}` |
+| Turni dei medici | `/api/doctor-schedules` | ✓ | ✓ | `/{id}` | `/{id}` |
 
 Le chiamate `GET` non modificano i dati. `POST` crea un record, `PUT` sostituisce i dati modificabili e `DELETE` elimina il record. Le risposte usano codici HTTP standard: `201` per la creazione, `204` per modifica/eliminazione, `400` per dati non validi, `404` per record inesistenti e `409` per conflitti.
 
@@ -396,6 +402,34 @@ Invoke-RestMethod `
 ```
 
 La normale `DELETE /api/appointments/{id}` rimane disponibile per amministrazione e test, ma il flusso applicativo dovrebbe preferire `/cancel`, così lo storico viene conservato.
+
+### Dati aggiuntivi inclusi
+
+`database/expansion.sql` amplia automaticamente anche un database `KlinikDb` già esistente. Aggiunge:
+
+- cinque specialità: Oculistica, Ortopedia, Ginecologia, Neurologia e Nutrizione;
+- due sedi milanesi: Porta Romana e CityLife;
+- cinque nuovi medici con biografia, specialità e sede;
+- dieci prestazioni mediche con durata e prezzo;
+- associazioni automatiche tra medici e prestazioni della stessa specialità;
+- turni dimostrativi di lunedì, mercoledì e venerdì;
+- sette nuovi prodotti tra integratori, dermocosmesi, medicazione e dispositivi.
+
+Lo script controlla ogni record o oggetto prima dell'inserimento e può quindi essere rieseguito. Le nuove API consentono di mantenere questi dati senza modificare direttamente l'HTML:
+
+```text
+GET    /api/medical-services?specialtyId=1&active=true
+POST   /api/medical-services
+PUT    /api/medical-services/{id}
+DELETE /api/medical-services/{id}
+PUT    /api/medical-services/{serviceId}/doctors/{doctorId}
+DELETE /api/medical-services/{serviceId}/doctors/{doctorId}
+
+GET    /api/doctor-schedules?doctorId=1
+POST   /api/doctor-schedules
+PUT    /api/doctor-schedules/{id}
+DELETE /api/doctor-schedules/{id}
+```
 
 ## Ottimizzazioni delle prestazioni
 
