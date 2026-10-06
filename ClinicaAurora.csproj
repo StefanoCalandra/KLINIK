@@ -21,6 +21,7 @@
     <RuntimeHostConfigurationOption Include="System.Globalization.AppLocalIcu" Value="72.1" />
   </ItemGroup>
   <ItemGroup>
+    <None Update="database\expansion.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Update="database\stored-procedures.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

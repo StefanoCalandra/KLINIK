@@ -17,6 +17,8 @@ public static class ClinicEndpoints
         MapDoctors(api);
         MapAppointments(api);
         MapProducts(api);
+        MapMedicalServices(api);
+        MapDoctorSchedules(api);
         return app;
     }
 
@@ -203,6 +205,81 @@ public static class ClinicEndpoints
         });
     }
 
+    private static void MapMedicalServices(RouteGroupBuilder api)
+    {
+        var group = api.MapGroup("/medical-services");
+        group.MapGet("/", async (int? specialtyId, bool? active, KlinikDbContext db) =>
+        {
+            var query = db.MedicalServices.AsNoTracking().AsQueryable();
+            if (specialtyId.HasValue) query = query.Where(item => item.SpecialtyId == specialtyId);
+            if (active.HasValue) query = query.Where(item => item.IsActive == active);
+            return await query.OrderBy(item => item.Name).Select(item => new
+            {
+                item.Id, item.Name, item.Description, item.DurationMinutes, item.Price,
+                item.IsActive, item.SpecialtyId, Specialty = item.Specialty!.Name
+            }).ToListAsync();
+        });
+        group.MapPost("/", async (MedicalServiceRequest request, KlinikDbContext db) =>
+        {
+            var error = await ValidateMedicalServiceAsync(request, db); if (error is not null) return error;
+            var item = new MedicalService { Name = request.Name.Trim(), Description = request.Description?.Trim(), DurationMinutes = request.DurationMinutes, Price = request.Price, IsActive = request.IsActive, SpecialtyId = request.SpecialtyId };
+            db.MedicalServices.Add(item); await db.SaveChangesAsync();
+            return Results.Created($"/api/medical-services/{item.Id}", new { item.Id });
+        });
+        group.MapPut("/{id:int}", async (int id, MedicalServiceRequest request, KlinikDbContext db) =>
+        {
+            var item = await db.MedicalServices.FindAsync(id); if (item is null) return Results.NotFound();
+            var error = await ValidateMedicalServiceAsync(request, db); if (error is not null) return error;
+            item.Name = request.Name.Trim(); item.Description = request.Description?.Trim(); item.DurationMinutes = request.DurationMinutes;
+            item.Price = request.Price; item.IsActive = request.IsActive; item.SpecialtyId = request.SpecialtyId;
+            await db.SaveChangesAsync(); return Results.NoContent();
+        });
+        group.MapDelete("/{id:int}", (int id, KlinikDbContext db) => DeleteAsync(db, db.MedicalServices, id));
+        group.MapPut("/{serviceId:int}/doctors/{doctorId:int}", async (int serviceId, int doctorId, KlinikDbContext db) =>
+        {
+            if (!await db.MedicalServices.AnyAsync(item => item.Id == serviceId) || !await db.Doctors.AnyAsync(item => item.Id == doctorId)) return Results.NotFound();
+            if (!await db.DoctorServices.AnyAsync(item => item.MedicalServiceId == serviceId && item.DoctorId == doctorId))
+            {
+                db.DoctorServices.Add(new DoctorService { MedicalServiceId = serviceId, DoctorId = doctorId });
+                await db.SaveChangesAsync();
+            }
+            return Results.NoContent();
+        });
+        group.MapDelete("/{serviceId:int}/doctors/{doctorId:int}", async (int serviceId, int doctorId, KlinikDbContext db) =>
+        {
+            var item = await db.DoctorServices.FindAsync(doctorId, serviceId); if (item is null) return Results.NotFound();
+            db.DoctorServices.Remove(item); await db.SaveChangesAsync(); return Results.NoContent();
+        });
+    }
+
+    private static void MapDoctorSchedules(RouteGroupBuilder api)
+    {
+        var group = api.MapGroup("/doctor-schedules");
+        group.MapGet("/", async (int? doctorId, KlinikDbContext db) =>
+        {
+            var query = db.DoctorSchedules.AsNoTracking().AsQueryable();
+            if (doctorId.HasValue) query = query.Where(item => item.DoctorId == doctorId);
+            return await query.OrderBy(item => item.DoctorId).ThenBy(item => item.DayOfWeek).ThenBy(item => item.StartTime)
+                .Select(item => new { item.Id, item.DoctorId, Doctor = item.Doctor!.FullName, item.DayOfWeek, item.StartTime, item.EndTime, item.SlotDurationMinutes, item.IsActive }).ToListAsync();
+        });
+        group.MapPost("/", async (DoctorScheduleRequest request, KlinikDbContext db) =>
+        {
+            var error = await ValidateScheduleAsync(request, db); if (error is not null) return error;
+            var item = new DoctorSchedule { DoctorId = request.DoctorId, DayOfWeek = request.DayOfWeek, StartTime = request.StartTime, EndTime = request.EndTime, SlotDurationMinutes = request.SlotDurationMinutes, IsActive = request.IsActive };
+            db.DoctorSchedules.Add(item); await db.SaveChangesAsync();
+            return Results.Created($"/api/doctor-schedules/{item.Id}", new { item.Id });
+        });
+        group.MapPut("/{id:int}", async (int id, DoctorScheduleRequest request, KlinikDbContext db) =>
+        {
+            var item = await db.DoctorSchedules.FindAsync(id); if (item is null) return Results.NotFound();
+            var error = await ValidateScheduleAsync(request, db); if (error is not null) return error;
+            item.DoctorId = request.DoctorId; item.DayOfWeek = request.DayOfWeek; item.StartTime = request.StartTime;
+            item.EndTime = request.EndTime; item.SlotDurationMinutes = request.SlotDurationMinutes; item.IsActive = request.IsActive;
+            await db.SaveChangesAsync(); return Results.NoContent();
+        });
+        group.MapDelete("/{id:int}", (int id, KlinikDbContext db) => DeleteAsync(db, db.DoctorSchedules, id));
+    }
+
     private static async Task<IResult?> ValidateDoctorAsync(DoctorRequest request, KlinikDbContext db)
     {
         if (string.IsNullOrWhiteSpace(request.FullName)) return Validation("Il nome del medico è obbligatorio.");
@@ -225,6 +302,20 @@ public static class ClinicEndpoints
         if (string.IsNullOrWhiteSpace(request.Name)) return Validation("Il nome del prodotto è obbligatorio.");
         if (request.Price < 0 || request.StockQuantity < 0) return Validation("Prezzo e quantità non possono essere negativi.");
         return null;
+    }
+
+    private static async Task<IResult?> ValidateMedicalServiceAsync(MedicalServiceRequest request, KlinikDbContext db)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name)) return Validation("Il nome della prestazione è obbligatorio.");
+        if (request.DurationMinutes is < 10 or > 480 || request.Price < 0) return Validation("Durata o prezzo non validi.");
+        return await db.Specialties.AnyAsync(item => item.Id == request.SpecialtyId) ? null : Validation("Specialità inesistente.");
+    }
+
+    private static async Task<IResult?> ValidateScheduleAsync(DoctorScheduleRequest request, KlinikDbContext db)
+    {
+        if (request.StartTime >= request.EndTime) return Validation("L'orario di fine deve essere successivo a quello iniziale.");
+        if (request.SlotDurationMinutes is < 10 or > 240) return Validation("La durata dello slot deve essere compresa tra 10 e 240 minuti.");
+        return await db.Doctors.AnyAsync(item => item.Id == request.DoctorId) ? null : Validation("Medico inesistente.");
     }
 
     private static PharmacyProduct ToProduct(ProductRequest request) => new()

@@ -18,4 +18,6 @@ public sealed class Doctor
     public int LocationId { get; set; }
     public Location? Location { get; set; }
     public ICollection<Appointment> Appointments { get; set; } = [];
+    public ICollection<DoctorService> DoctorServices { get; set; } = [];
+    public ICollection<DoctorSchedule> Schedules { get; set; } = [];
 }
