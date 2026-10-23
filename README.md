@@ -52,7 +52,7 @@ Il profilo usa questi indirizzi:
 - `https://localhost:7043`
 - `http://localhost:5043`
 
-Al primo avvio HTTPS, Visual Studio può chiedere di autorizzare il certificato locale di sviluppo. Non servono `npm install`, Live Server o altri pacchetti.
+Al primo avvio HTTPS, Visual Studio può chiedere di autorizzare il certificato locale di sviluppo. Per avviare il sito non servono `npm install`, Live Server o altri pacchetti; `npm ci` installa soltanto gli strumenti per i test browser.
 
 ### Avvio rapido su Windows
 
@@ -130,7 +130,7 @@ KLINIK/
 
 ### `ClinicaAurora.csproj`
 
-Usa l'SDK `Microsoft.NET.Sdk.Web`, quindi Visual Studio riconosce un'applicazione ASP.NET Core. `TargetFramework` è `net10.0`; `Nullable` abilita i controlli sui valori null e `ImplicitUsings` rende disponibili automaticamente gli spazi dei nomi più comuni. Non sono presenti pacchetti NuGet esterni.
+Usa l'SDK `Microsoft.NET.Sdk.Web`, quindi Visual Studio riconosce un'applicazione ASP.NET Core. `TargetFramework` è `net10.0`; `Nullable` abilita i controlli sui valori null e `ImplicitUsings` rende disponibili automaticamente gli spazi dei nomi più comuni. I pacchetti NuGet includono Entity Framework Core SQL Server e, su Windows, ICU app-local.
 
 ### `ClinicaAurora.sln`
 
@@ -523,3 +523,51 @@ Per verificare la parte .NET da terminale:
 ```powershell
 dotnet build ClinicaAurora.sln
 ```
+
+
+### Verifiche funzionali e regressioni
+
+Il backend richiede .NET SDK 10, ICU di sistema su Linux e un SQL Server raggiungibile.
+La connessione può essere impostata tramite `ConnectionStrings__KlinikDatabase`, senza
+modificare `appsettings.json` né salvare credenziali nel repository. Gli script aggiuntivi
+operano sul database della connessione corrente, anche se il nome non è `KlinikDb`.
+Su Windows viene mantenuto ICU app-local; su Linux non è più necessario un runtimeconfig esterno.
+
+```bash
+npm ci
+npm run check
+npm test
+dotnet build ClinicaAurora.sln
+# Avviare il backend con una connessione SQL Server di sviluppo configurata:
+dotnet run --no-launch-profile --urls http://127.0.0.1:5043
+```
+
+Con il backend in esecuzione, da un secondo terminale:
+
+```bash
+KLINIK_API_URL=http://127.0.0.1:5043 npm run test:api
+BROWSER_EXECUTABLE=/usr/bin/chromium KLINIK_API_URL=http://127.0.0.1:5043 npm run test:browser
+```
+
+`test:api` richiede Python 3 e un database di sviluppo, senza pacchetti Python aggiuntivi.
+Verifica CRUD, validazione, filtri, conflitti relazionali, prenotazioni e decrementi di
+magazzino concorrenti. Crea record riconoscibili e rimuove soltanto quelli creati dal test.
+`test:browser` usa Playwright Core e un Chromium già installato (impostare
+`BROWSER_EXECUTABLE` al percorso del browser): controlla caricamento dei dati,
+prenotazione, gestione degli errori, fuso orario e navigazione mobile. `npm test` avvia
+in autonomia un server Node temporaneo e verifica HTTP, cache, compressione e accessi ai file.
+
+Gli appuntamenti inviati dal browser vengono salvati e restituiti in UTC. I client API
+dovrebbero inviare date ISO 8601 con `Z` o offset esplicito. Per dati storici inseriti
+manualmente in ora locale, verificare il fuso prima di qualsiasi conversione: gli script
+non modificano automaticamente le date già registrate.
+
+L'annullamento libera lo slot conservando lo storico. Il primo avvio aggiorna anche il
+precedente vincolo univoco con un indice filtrato: uno slot può avere più prenotazioni
+annullate, ma una sola non annullata. La riattivazione di una prenotazione su uno slot
+nel frattempo occupato restituisce `409`.
+
+`GET /api/products?active=false` restituisce i prodotti non attivi e rispetta i filtri
+`category` e `search`; senza `active=false` vengono mostrati i prodotti attivi disponibili.
+Le richieste non valide restituiscono `400`, i duplicati e i conflitti `409`, gli
+indirizzi API inesistenti `404`.

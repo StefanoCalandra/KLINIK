@@ -11,7 +11,7 @@ public static class ClinicEndpoints
 {
     public static IEndpointRouteBuilder MapClinicEndpoints(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api");
+        var api = app.MapGroup("/api").AddEndpointFilter<RequestValidationFilter>();
         MapSpecialties(api);
         MapLocations(api);
         MapDoctors(api);
@@ -114,10 +114,10 @@ public static class ClinicEndpoints
     private static void MapAppointments(RouteGroupBuilder api)
     {
         var group = api.MapGroup("/appointments");
-        group.MapGet("/", async (DateTime? from, DateTime? to, int? doctorId, string? status, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
+        group.MapGet("/", async (DateTimeOffset? from, DateTimeOffset? to, int? doctorId, string? status, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
         {
-            var rangeFrom = from ?? DateTime.Today.AddYears(-1);
-            var rangeTo = to ?? DateTime.Today.AddYears(5);
+            var rangeFrom = from?.UtcDateTime ?? DateTime.UtcNow.Date.AddYears(-1);
+            var rangeTo = to?.UtcDateTime ?? DateTime.UtcNow.Date.AddYears(5);
             if (rangeFrom >= rangeTo) return Results.ValidationProblem(new Dictionary<string, string[]> { ["range"] = ["L'intervallo di date non è valido."] });
             var results = await procedures.GetAppointmentsAsync(rangeFrom, rangeTo, doctorId, status, cancellationToken);
             return Results.Ok(results);
@@ -147,12 +147,13 @@ public static class ClinicEndpoints
         group.MapPut("/{id:int}", async (int id, AppointmentRequest request, KlinikDbContext db) =>
         {
             var item = await db.Appointments.FindAsync(id); if (item is null) return Results.NotFound();
-            var error = await ValidateAppointmentAsync(request, db, id); if (error is not null) return error;
+            var error = await ValidateAppointmentAsync(request, db, id, item.Status); if (error is not null) return error;
             item.PatientName = request.PatientName.Trim(); item.Phone = request.Phone.Trim(); item.Email = request.Email?.Trim();
-            item.AppointmentDate = request.AppointmentDate; item.Status = string.IsNullOrWhiteSpace(request.Status) ? item.Status : request.Status.Trim();
+            item.AppointmentDate = request.AppointmentDate.UtcDateTime; item.Status = string.IsNullOrWhiteSpace(request.Status) ? item.Status : request.Status.Trim();
             item.Notes = request.Notes?.Trim(); item.DoctorId = request.DoctorId;
             try { await db.SaveChangesAsync(); }
-            catch (DbUpdateException) { return Results.Conflict(new { message = "Questo orario non è più disponibile." }); }
+            catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+            { return Results.Conflict(new { message = "Questo orario non è più disponibile." }); }
             return Results.NoContent();
         });
         group.MapPost("/{id:int}/cancel", async (int id, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
@@ -175,7 +176,9 @@ public static class ClinicEndpoints
         group.MapGet("/", async (bool? active, string? category, string? search, KlinikDbContext db, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
         {
             if (active is not false) return Results.Ok(await procedures.GetAvailableProductsAsync(category, search, cancellationToken));
-            var query = db.PharmacyProducts.AsNoTracking().AsQueryable();
+            var query = db.PharmacyProducts.AsNoTracking().Where(x => !x.IsActive);
+            if (!string.IsNullOrWhiteSpace(category)) query = query.Where(x => x.Category == category);
+            if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Name.Contains(search));
             return Results.Ok(await query.OrderBy(x => x.Name).ToListAsync(cancellationToken));
         });
         group.MapGet("/{id:int}", async (int id, KlinikDbContext db) =>
@@ -288,12 +291,14 @@ public static class ClinicEndpoints
         return null;
     }
 
-    private static async Task<IResult?> ValidateAppointmentAsync(AppointmentRequest request, KlinikDbContext db, int? currentId = null)
+    private static async Task<IResult?> ValidateAppointmentAsync(AppointmentRequest request, KlinikDbContext db, int? currentId = null, string? currentStatus = null)
     {
         if (string.IsNullOrWhiteSpace(request.PatientName) || string.IsNullOrWhiteSpace(request.Phone)) return Validation("Nome e telefono sono obbligatori.");
-        if (request.AppointmentDate <= DateTime.Now) return Validation("La data deve essere futura.");
+        if (request.AppointmentDate <= DateTimeOffset.UtcNow) return Validation("La data deve essere futura.");
         if (!await db.Doctors.AnyAsync(x => x.Id == request.DoctorId && x.IsAvailable)) return Validation("Medico inesistente o non disponibile.");
-        var occupied = await db.Appointments.AnyAsync(x => x.DoctorId == request.DoctorId && x.AppointmentDate == request.AppointmentDate && x.Id != currentId);
+        var date = request.AppointmentDate.UtcDateTime;
+        var effectiveStatus = string.IsNullOrWhiteSpace(request.Status) ? currentStatus : request.Status;
+        var occupied = effectiveStatus != "Annullata" && await db.Appointments.AnyAsync(x => x.DoctorId == request.DoctorId && x.AppointmentDate == date && x.Status != "Annullata" && x.Id != currentId);
         return occupied ? Results.Conflict(new { message = "Questo orario non è più disponibile." }) : null;
     }
 
@@ -327,13 +332,20 @@ public static class ClinicEndpoints
     private static IResult Validation(string message) => Results.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [message] });
 
     private static IResult StoredProcedureProblem(SqlException exception) =>
-        Results.Problem(title: "Operazione rifiutata dal database", detail: exception.Message, statusCode: StatusCodes.Status409Conflict);
+        Results.Problem(title: "Operazione rifiutata dal database", detail: exception.Message,
+            statusCode: exception.Number switch
+            {
+                50001 or 50002 or 50003 or 50004 or 50010 or 50021 or 50030 => StatusCodes.Status400BadRequest,
+                50022 => StatusCodes.Status404NotFound,
+                _ => StatusCodes.Status409Conflict
+            });
 
     private static async Task<IResult> DeleteAsync<TEntity>(KlinikDbContext db, DbSet<TEntity> set, int id) where TEntity : class
     {
         var item = await set.FindAsync(id); if (item is null) return Results.NotFound();
         set.Remove(item);
         try { await db.SaveChangesAsync(); return Results.NoContent(); }
-        catch (DbUpdateException) { return Results.Conflict(new { message = "Il record è usato da altri dati e non può essere eliminato." }); }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 547 })
+        { return Results.Conflict(new { message = "Il record è usato da altri dati e non può essere eliminato." }); }
     }
 }

@@ -15,3 +15,12 @@ idempotenti `CREATE OR ALTER`; può anche essere eseguito manualmente da SSMS.
 `expansion.sql` aggiunge prestazioni mediche, associazioni medico-prestazione,
 turni settimanali, ulteriori specialisti e un catalogo farmaceutico ampio. È idempotente e viene
 eseguito automaticamente prima delle stored procedure.
+
+
+Negli script `expansion.sql` e `stored-procedures.sql` non è presente `USE KlinikDb`:
+se li esegui manualmente, seleziona prima il database corretto in SSMS. L'applicazione
+usa automaticamente il database indicato nella connessione. La cancellazione logica di
+un appuntamento libera il relativo slot; lo script delle procedure aggiorna in modo
+idempotente anche il precedente indice/vincolo univoco senza eliminare lo storico.
+Le nuove prenotazioni usano orari UTC; non viene applicata alcuna conversione ai dati
+storici inseriti manualmente.

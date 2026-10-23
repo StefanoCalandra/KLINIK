@@ -53,14 +53,14 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db)
                 reader.GetString(reader.GetOrdinal("PatientName")),
                 reader.GetString(reader.GetOrdinal("Phone")),
                 GetNullableString(reader, "Email"),
-                reader.GetDateTime(reader.GetOrdinal("AppointmentDate")),
+                DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("AppointmentDate")), DateTimeKind.Utc),
                 reader.GetString(reader.GetOrdinal("Status")),
                 GetNullableString(reader, "Notes"),
                 reader.GetInt32(reader.GetOrdinal("DoctorId")),
                 reader.GetString(reader.GetOrdinal("Doctor")),
                 reader.GetString(reader.GetOrdinal("Specialty")),
                 HasColumn(reader, "Location") ? GetNullableString(reader, "Location") : null,
-                reader.GetDateTime(reader.GetOrdinal("CreatedAt"))));
+                DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("CreatedAt")), DateTimeKind.Utc)));
         }
         return results;
     }
@@ -71,7 +71,7 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db)
         AddParameter(command, "@PatientName", DbType.String, request.PatientName, 120);
         AddParameter(command, "@Phone", DbType.String, request.Phone, 30);
         AddParameter(command, "@Email", DbType.String, request.Email, 150);
-        AddParameter(command, "@AppointmentDate", DbType.DateTime2, request.AppointmentDate);
+        AddParameter(command, "@AppointmentDate", DbType.DateTime2, request.AppointmentDate.UtcDateTime);
         AddParameter(command, "@DoctorId", DbType.Int32, request.DoctorId);
         AddParameter(command, "@Notes", DbType.String, request.Notes, 1000);
 

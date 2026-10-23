@@ -14,6 +14,7 @@ public static class DatabaseInitializer
 
         if (!await db.Specialties.AnyAsync())
         {
+            await using var transaction = await db.Database.BeginTransactionAsync();
             var cardiology = new Specialty { Name = "Cardiologia", Description = "Prevenzione e cura cardiovascolare" };
             var dermatology = new Specialty { Name = "Dermatologia", Description = "Salute della pelle" };
             var pediatrics = new Specialty { Name = "Pediatria", Description = "Cura dei bambini e adolescenti" };
@@ -36,6 +37,7 @@ public static class DatabaseInitializer
                 new PharmacyProduct { Name = "Crema corpo", Category = "Dermocosmesi", Price = 18.00m, StockQuantity = 18, Description = "Crema corpo idratante." });
 
             await db.SaveChangesAsync();
+            await transaction.CommitAsync();
         }
 
         await ExecuteSqlScriptAsync(db, "expansion.sql");

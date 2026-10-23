@@ -1,3 +1,12 @@
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET ARITHABORT ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET NUMERIC_ROUNDABORT OFF;
+GO
+
 /* Eseguire in SSMS 21 connessi a STEFANO-PC\SQLEXPRESS.
    Lo script è alternativo alla creazione automatica di Entity Framework Core. */
 IF DB_ID(N'KlinikDb') IS NULL
@@ -53,10 +62,12 @@ BEGIN
         Notes nvarchar(1000) NULL,
         DoctorId int NOT NULL,
         CreatedAt datetime2 NOT NULL CONSTRAINT DF_Appointments_CreatedAt DEFAULT SYSUTCDATETIME(),
-        CONSTRAINT FK_Appointments_Doctors FOREIGN KEY (DoctorId) REFERENCES dbo.Doctors(Id),
-        CONSTRAINT UQ_Appointments_DoctorDate UNIQUE (DoctorId, AppointmentDate)
+        CONSTRAINT FK_Appointments_Doctors FOREIGN KEY (DoctorId) REFERENCES dbo.Doctors(Id)
     );
 END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_Appointments_DoctorId_AppointmentDate' AND object_id=OBJECT_ID(N'dbo.Appointments'))
+    CREATE UNIQUE INDEX IX_Appointments_DoctorId_AppointmentDate ON dbo.Appointments(DoctorId, AppointmentDate) WHERE Status<>N'Annullata';
 
 IF OBJECT_ID(N'dbo.PharmacyProducts', N'U') IS NULL
 BEGIN

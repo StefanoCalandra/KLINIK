@@ -1,6 +1,14 @@
-/* Espansione idempotente di KlinikDb: prestazioni, turni e dati dimostrativi. */
-USE KlinikDb;
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET ARITHABORT ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET NUMERIC_ROUNDABORT OFF;
 GO
+
+/* Espansione idempotente di KlinikDb: prestazioni, turni e dati dimostrativi. */
+-- Usa il database della connessione corrente, anche se ha un nome personalizzato.
 
 IF OBJECT_ID(N'dbo.MedicalServices', N'U') IS NULL
 BEGIN

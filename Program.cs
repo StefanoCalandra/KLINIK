@@ -54,6 +54,9 @@ app.UseStaticFiles();
 // prodotti. I dati vengono letti e modificati direttamente su SQL Server.
 app.MapClinicEndpoints();
 
+// Un indirizzo API sconosciuto non deve restituire HTML con stato 200.
+app.MapFallback("/api/{**path}", () => Results.NotFound());
+
 // In una demo a pagina singola, un percorso non riconosciuto torna alla home
 // invece di mostrare una pagina 404. I file realmente esistenti sono già stati
 // gestiti da UseStaticFiles nelle righe precedenti.

@@ -11,15 +11,15 @@ let doctors = [];
 // comprensibile anche quando il server restituisce un errore di validazione.
 async function apiRequest(url, options = {}) {
   const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers },
   });
 
   if (response.ok) return response.status === 204 ? null : response.json();
 
   const problem = await response.json().catch(() => ({}));
   const validationText = problem.errors && Object.values(problem.errors).flat().join(' ');
-  throw new Error(problem.message || validationText || 'Operazione non riuscita. Riprova.');
+  throw new Error(problem.message || validationText || problem.detail || 'Operazione non riuscita. Riprova.');
 }
 
 function fillSelect(select, items, placeholder, labelSelector = (item) => item.name) {
@@ -43,6 +43,7 @@ function renderDoctors(items) {
     return;
   }
 
+  const fragment = document.createDocumentFragment();
   items.forEach((doctor, index) => {
     const article = document.createElement('article');
     const avatar = document.createElement('div');
@@ -57,8 +58,9 @@ function renderDoctors(items) {
     const availability = document.createElement('span');
     availability.textContent = doctor.isAvailable ? 'Disponibile' : 'Non disponibile';
     article.append(avatar, details, availability);
-    list.append(article);
+    fragment.append(article);
   });
+  list.append(fragment);
 }
 
 async function loadReferenceData() {
@@ -78,12 +80,19 @@ async function loadReferenceData() {
     console.error('Impossibile caricare i dati dal database:', error);
     specialtySelect.replaceChildren(new Option('Dati non disponibili', ''));
     locationSelect.replaceChildren(new Option('Dati non disponibili', ''));
+    doctorSelect.replaceChildren(new Option('Prenotazioni non disponibili', ''));
+    renderDoctors([]);
   }
 }
 
 // Tutti i pulsanti con data-book condividono lo stesso dialog di prenotazione.
 document.querySelectorAll('[data-book]').forEach((button) => {
-  button.addEventListener('click', () => dialog.showModal());
+  button.addEventListener('click', () => {
+    fillSelect(doctorSelect, doctors.filter((doctor) => doctor.isAvailable), 'Seleziona un medico',
+      (doctor) => `${doctor.fullName} — ${doctor.specialty}`);
+    refreshDateMinimum();
+    dialog.showModal();
+  });
 });
 
 // Il dialog può essere chiuso dal pulsante X oppure cliccando sullo sfondo.
@@ -105,18 +114,18 @@ form.addEventListener('submit', async (event) => {
   submitButton.disabled = true;
   submitButton.textContent = 'Registrazione…';
 
-  const values = Object.fromEntries(new FormData(form));
-  const payload = {
-    patientName: values.patientName,
-    phone: values.phone,
-    email: values.email || null,
-    doctorId: Number(values.doctorId),
-    appointmentDate: new Date(values.appointmentDate).toISOString(),
-    notes: values.notes || null,
-    status: 'In attesa',
-  };
-
   try {
+    const values = Object.fromEntries(new FormData(form));
+    const payload = {
+      patientName: values.patientName,
+      phone: values.phone,
+      email: values.email || null,
+      doctorId: Number(values.doctorId),
+      appointmentDate: new Date(values.appointmentDate).toISOString(),
+      notes: values.notes || null,
+      status: 'In attesa',
+    };
+
     const result = await apiRequest('/api/appointments', { method: 'POST', body: JSON.stringify(payload) });
     document.querySelector('#bookingReference').textContent = `AUR-${String(result.id).padStart(6, '0')}`;
     form.hidden = true;
@@ -140,6 +149,7 @@ document.querySelector('.menu-btn').addEventListener('click', (event) => {
 
 document.querySelectorAll('.desktop-nav a').forEach((link) => link.addEventListener('click', () => {
   document.querySelector('.desktop-nav').classList.remove('open');
+  document.querySelector('.menu-btn').setAttribute('aria-expanded', 'false');
 }));
 
 const revealObserver = new IntersectionObserver((entries) => {
@@ -160,8 +170,14 @@ document.querySelector('#findVisit').addEventListener('click', () => {
     && (!specialtyId || doctor.specialtyId === specialtyId)
     && (!locationId || doctor.locationId === locationId));
   fillSelect(doctorSelect, filtered, 'Seleziona un medico', (doctor) => `${doctor.fullName} — ${doctor.specialty}`);
-  const selectedDate = document.querySelector('#date').value;
-  if (selectedDate) bookingDate.value = `${selectedDate}T09:00`;
+  refreshDateMinimum();
+  const dateInput = document.querySelector('#date');
+  if (!dateInput.reportValidity()) return;
+  const selectedDate = dateInput.value;
+  if (selectedDate) {
+    const preferredTime = `${selectedDate}T09:00`;
+    bookingDate.value = preferredTime < bookingDate.min ? bookingDate.min : preferredTime;
+  }
   dialog.showModal();
 });
 
@@ -169,7 +185,11 @@ document.querySelector('[data-open-search]').addEventListener('click', () => spe
 document.querySelector('#shopButton').addEventListener('click', () => alert('Il catalogo viene gestito nel database ed è in preparazione.'));
 
 // Impedisce al browser di proporre date passate e carica i dati iniziali.
-const now = new Date();
-now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-bookingDate.min = now.toISOString().slice(0, 16);
+function refreshDateMinimum() {
+  const now = new Date(Date.now() + 60000);
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  bookingDate.min = now.toISOString().slice(0, 16);
+  document.querySelector('#date').min = bookingDate.min.slice(0, 10);
+}
+refreshDateMinimum();
 loadReferenceData();

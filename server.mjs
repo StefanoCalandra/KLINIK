@@ -1,4 +1,5 @@
-import { createReadStream, statSync } from 'node:fs';
+import { open, realpath } from 'node:fs/promises';
+import { pipeline } from 'node:stream';
 import { createServer } from 'node:http';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -8,7 +9,7 @@ import { createGzip } from 'node:zlib';
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 4173);
 // Il server alternativo pubblica la stessa cartella usata da ASP.NET Core.
-const root = resolve(process.cwd(), 'wwwroot');
+const root = await realpath(resolve(process.cwd(), 'wwwroot'));
 
 // Associa ogni estensione usata dal sito al Content-Type inviato al browser.
 const contentTypes = {
@@ -21,7 +22,11 @@ const contentTypes = {
 
 const compressibleExtensions = new Set(['.css', '.html', '.js', '.json', '.svg']);
 
-const server = createServer((request, response) => {
+const server = createServer(async (request, response) => {
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    response.writeHead(405, { Allow: 'GET, HEAD' }).end();
+    return;
+  }
   let pathname;
   let requestUrl;
 
@@ -46,41 +51,68 @@ const server = createServer((request, response) => {
     return;
   }
 
-  // Se il file è presente lo invia come stream: in questo modo non viene
-  // caricato interamente in memoria. Le risorse mancanti restituiscono 404.
+  let file;
   try {
-    if (!statSync(filePath).isFile()) throw new Error('Not a file');
+    const actualPath = await realpath(filePath);
+    const actualRelative = relative(root, actualPath);
+    if (actualRelative.startsWith('..') || isAbsolute(actualRelative)) {
+      response.writeHead(403).end('Accesso negato');
+      return;
+    }
+    file = await open(actualPath);
+    const stat = await file.stat();
+    if (!stat.isFile()) {
+      response.writeHead(404).end('Pagina non trovata');
+      return;
+    }
     const extension = extname(filePath);
-    const acceptsGzip = request.headers['accept-encoding']?.includes('gzip');
-    const shouldCompress = acceptsGzip && compressibleExtensions.has(extension);
-    const isVersionedAsset = requestUrl.searchParams.has('v');
-
-    response.writeHead(200, {
+    const encodings = new Map((request.headers['accept-encoding'] ?? '').split(',').map((entry) => {
+      const [name, ...parameters] = entry.trim().toLowerCase().split(';');
+      const quality = parameters.find((value) => value.trim().startsWith('q='));
+      return [name, quality ? Number(quality.trim().slice(2)) : 1];
+    }));
+    const shouldCompress = (encodings.get('gzip') ?? encodings.get('*') ?? 0) > 0
+      && compressibleExtensions.has(extension);
+    const isVersionedAsset = requestUrl.searchParams.has('v') && extension !== '.html';
+    const etag = `W/"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`;
+    const headers = {
       'Content-Type': contentTypes[extension] ?? 'application/octet-stream',
       'Cache-Control': isVersionedAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
-      'Content-Encoding': shouldCompress ? 'gzip' : 'identity',
       'Vary': 'Accept-Encoding',
+      'ETag': etag,
+      'Last-Modified': stat.mtime.toUTCString(),
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
       'Content-Security-Policy': "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
-    });
-
+    };
+    if (shouldCompress) headers['Content-Encoding'] = 'gzip';
+    const tags = (request.headers['if-none-match'] ?? '').split(',').map((tag) => tag.trim());
+    if (tags.some((tag) => tag === '*' || tag.replace(/^W\//, '') === etag.replace(/^W\//, ''))) {
+      response.writeHead(304, headers).end();
+      return;
+    }
+    if (!shouldCompress) headers['Content-Length'] = stat.size;
+    response.writeHead(200, headers);
     if (request.method === 'HEAD') {
       response.end();
       return;
     }
-
-    const stream = createReadStream(filePath);
-    if (shouldCompress) stream.pipe(createGzip()).pipe(response);
-    else stream.pipe(response);
-  } catch {
-    response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Pagina non trovata');
+    const stream = file.createReadStream();
+    file = null; // Il flusso possiede e chiude il descrittore, anche in caso di errore.
+    if (shouldCompress) pipeline(stream, createGzip(), response, () => {});
+    else pipeline(stream, response, () => {});
+  } catch (error) {
+    if (response.headersSent) response.destroy();
+    else response.writeHead(error.code === 'ENOENT' || error.code === 'ENOTDIR' ? 404 : 500,
+      { 'Content-Type': 'text/plain; charset=utf-8' }).end('Risorsa non disponibile');
+  } finally {
+    if (file) await file.close();
   }
 });
 
 server.listen(port, host, () => {
-  const url = `http://${host}:${port}`;
+  const url = `http://${host}:${server.address().port}`;
   console.log(`Clinica Aurora disponibile su ${url}`);
 
   if (process.argv.includes('--open')) {
