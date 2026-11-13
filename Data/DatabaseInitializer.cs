@@ -41,6 +41,7 @@ public static class DatabaseInitializer
         }
 
         await ExecuteSqlScriptAsync(db, "expansion.sql");
+        await ExecuteSqlScriptAsync(db, "calendar-schema.sql");
         await ExecuteSqlScriptAsync(db, "stored-procedures.sql");
     }
 

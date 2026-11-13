@@ -14,8 +14,20 @@ public sealed class KlinikDbContext(DbContextOptions<KlinikDbContext> options) :
     public DbSet<DoctorService> DoctorServices => Set<DoctorService>();
     public DbSet<DoctorSchedule> DoctorSchedules => Set<DoctorSchedule>();
 
+    public DbSet<DoctorAbsence> DoctorAbsences => Set<DoctorAbsence>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Appointment>().Property(x => x.DurationMinutes).HasDefaultValue(30);
+        modelBuilder.Entity<Appointment>().HasOne(x => x.MedicalService).WithMany()
+            .HasForeignKey(x => x.MedicalServiceId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<DoctorAbsence>().HasOne(x => x.Doctor).WithMany()
+            .HasForeignKey(x => x.DoctorId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<DoctorAbsence>().HasIndex(x => new { x.DoctorId, x.StartsAt });
+        modelBuilder.Entity<DoctorAbsence>().Property(x => x.StartsAt)
+            .HasConversion(value => value, value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
+        modelBuilder.Entity<DoctorAbsence>().Property(x => x.EndsAt)
+            .HasConversion(value => value, value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
         modelBuilder.Entity<Specialty>().HasIndex(item => item.Name).IsUnique();
         modelBuilder.Entity<Location>().HasIndex(item => item.Name).IsUnique();
         modelBuilder.Entity<Doctor>()

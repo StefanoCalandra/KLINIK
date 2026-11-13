@@ -5,7 +5,67 @@ const doctorSelect = document.querySelector('#bookingDoctor');
 const specialtySelect = document.querySelector('#specialty');
 const locationSelect = document.querySelector('#location');
 const bookingDate = document.querySelector('#bookingDate');
+const serviceSelect = document.querySelector('#bookingService');
+const slotSelect = document.querySelector('#bookingSlot');
+const slotMessage = document.querySelector('#slotMessage');
+let calendarVersion = 0;
+let doctorVersion = 0;
 let doctors = [];
+
+function clinicDate() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+function clearSlots(message = 'Scegli medico e giorno') {
+  slotSelect.replaceChildren(new Option(message, ''));
+  slotMessage.textContent = message;
+}
+
+async function loadSlots() {
+  const version = ++calendarVersion;
+  clearSlots();
+  if (!doctorSelect.value || !bookingDate.value || !bookingDate.checkValidity()) return;
+  clearSlots('Caricamento disponibilità…');
+  try {
+    const query = new URLSearchParams({ date: bookingDate.value });
+    if (serviceSelect.value) query.set('medicalServiceId', serviceSelect.value);
+    const slots = await apiRequest(`/api/doctors/${doctorSelect.value}/slots?${query}`);
+    if (version !== calendarVersion) return;
+    const time = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    slotSelect.replaceChildren(new Option(slots.length ? 'Seleziona un orario' : 'Nessun orario disponibile', ''));
+    slots.forEach((slot) => slotSelect.add(new Option(
+      `${time.format(new Date(slot.startsAt))} – ${time.format(new Date(slot.endsAt))} (${slot.durationMinutes} min)`, slot.startsAt)));
+    slotMessage.textContent = slots.length ? 'Orari della clinica (Roma). La disponibilità viene ricontrollata alla conferma.'
+      : 'Nessuna disponibilità per questo giorno. Prova un’altra data o prestazione.';
+  } catch (error) {
+    if (version !== calendarVersion) return;
+    clearSlots('Disponibilità non caricata. Cambia giorno per riprovare.');
+  }
+}
+
+async function doctorChanged() {
+  ++calendarVersion;
+  const version = ++doctorVersion;
+  serviceSelect.replaceChildren(new Option('Visita standard del turno', ''));
+  serviceSelect.disabled = true;
+  clearSlots();
+  try {
+    if (doctorSelect.value) {
+      const services = await apiRequest(`/api/medical-services?active=true&doctorId=${doctorSelect.value}`);
+      if (version !== doctorVersion) return;
+      services.forEach((service) => serviceSelect.add(new Option(`${service.name} (${service.durationMinutes} min)`, service.id)));
+    }
+    if (version === doctorVersion) await loadSlots();
+  } catch (error) {
+    if (version === doctorVersion) clearSlots('Prestazioni non caricate. Seleziona nuovamente il medico.');
+  } finally {
+    if (doctorSelect.value && version === doctorVersion) serviceSelect.disabled = false;
+  }
+}
+
+doctorSelect.addEventListener('change', doctorChanged);
+bookingDate.addEventListener('change', loadSlots);
+serviceSelect.addEventListener('change', loadSlots);
 
 // Esegue una richiesta JSON alla stessa applicazione e produce un messaggio
 // comprensibile anche quando il server restituisce un errore di validazione.
@@ -91,6 +151,8 @@ document.querySelectorAll('[data-book]').forEach((button) => {
     fillSelect(doctorSelect, doctors.filter((doctor) => doctor.isAvailable), 'Seleziona un medico',
       (doctor) => `${doctor.fullName} — ${doctor.specialty}`);
     refreshDateMinimum();
+    bookingDate.value = bookingDate.min;
+    doctorChanged();
     dialog.showModal();
   });
 });
@@ -101,6 +163,10 @@ dialog.addEventListener('click', (event) => {
   if (event.target === dialog) dialog.close();
 });
 dialog.addEventListener('close', () => {
+  calendarVersion++;
+  doctorVersion++;
+  clearSlots();
+  serviceSelect.replaceChildren(new Option('Visita standard del turno', ''));
   form.reset();
   form.hidden = false;
   errorMessage.hidden = true;
@@ -109,6 +175,7 @@ dialog.addEventListener('close', () => {
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (!form.reportValidity()) return;
   errorMessage.hidden = true;
   const submitButton = form.querySelector('button[type="submit"]');
   submitButton.disabled = true;
@@ -121,6 +188,7 @@ form.addEventListener('submit', async (event) => {
       phone: values.phone,
       email: values.email || null,
       doctorId: Number(values.doctorId),
+      medicalServiceId: values.medicalServiceId ? Number(values.medicalServiceId) : null,
       appointmentDate: new Date(values.appointmentDate).toISOString(),
       notes: values.notes || null,
       status: 'In attesa',
@@ -133,6 +201,7 @@ form.addEventListener('submit', async (event) => {
   } catch (error) {
     errorMessage.textContent = error.message;
     errorMessage.hidden = false;
+    await loadSlots();
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = 'Richiedi appuntamento →';
@@ -174,10 +243,8 @@ document.querySelector('#findVisit').addEventListener('click', () => {
   const dateInput = document.querySelector('#date');
   if (!dateInput.reportValidity()) return;
   const selectedDate = dateInput.value;
-  if (selectedDate) {
-    const preferredTime = `${selectedDate}T09:00`;
-    bookingDate.value = preferredTime < bookingDate.min ? bookingDate.min : preferredTime;
-  }
+  bookingDate.value = selectedDate || bookingDate.min;
+  doctorChanged();
   dialog.showModal();
 });
 
@@ -186,10 +253,8 @@ document.querySelector('#shopButton').addEventListener('click', () => alert('Il 
 
 // Impedisce al browser di proporre date passate e carica i dati iniziali.
 function refreshDateMinimum() {
-  const now = new Date(Date.now() + 60000);
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  bookingDate.min = now.toISOString().slice(0, 16);
-  document.querySelector('#date').min = bookingDate.min.slice(0, 10);
+  bookingDate.min = clinicDate();
+  document.querySelector('#date').min = bookingDate.min;
 }
 refreshDateMinimum();
 loadReferenceData();
