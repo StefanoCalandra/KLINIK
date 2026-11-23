@@ -34,11 +34,14 @@ try {
     const context = await browser.newContext({ timezoneId, viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
     const errors = [];
+    const initialApiRequests = [];
+    page.on('request', (request) => { if (request.url().includes('/api/')) initialApiRequests.push(new URL(request.url()).pathname); });
     page.on('pageerror', (error) => errors.push(error.message));
     try {
       await page.goto(base);
       await page.waitForFunction(() => document.querySelector('#bookingDoctor').options.length > 1);
       assert.ok(await page.locator('#doctorList article').count() > 0);
+      assert.deepEqual(initialApiRequests, ['/api/reference-data'], 'Initial data must use one request');
       const allDoctors = await page.locator('#bookingDoctor option').count();
       await page.locator('#specialty').selectOption(String(specialtyId));
       await page.locator('#date').fill(date);

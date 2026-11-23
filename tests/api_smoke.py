@@ -81,6 +81,41 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(request('/api/missing')[0], 404)
         self.assertEqual(request('/')[0], 200)
 
+    def test_reference_batch_matches_routes_and_stays_fresh(self):
+        doctor, specialty, location = self.doctor(with_schedule=False)
+        status, batch = request('/api/reference-data')
+        self.assertEqual(status, 200, batch)
+        for key in ['specialties', 'locations']:
+            code, original = request('/api/' + key)
+            self.assertEqual(code, 200)
+            self.assertEqual(batch[key], [{'id': item['id'], 'name': item['name']} for item in original])
+        self.assertEqual(batch['doctors'], request('/api/doctors')[1])
+        changed = 'Updated ' + self.suffix
+        self.assertEqual(request(f'/api/specialties/{specialty}', 'PUT', {'name': changed})[0], 204)
+        fresh = request('/api/reference-data')[1]
+        self.assertEqual(next(x['name'] for x in fresh['specialties'] if x['id'] == specialty), changed)
+        self.assertEqual(next(x['specialty'] for x in fresh['doctors'] if x['id'] == doctor), changed)
+
+    def test_maximum_duration_and_adjacent_slot(self):
+        doctor, specialty, _ = self.doctor(with_schedule=False)
+        for day in range(7):
+            self.create('/api/doctor-schedules', {'doctorId': doctor, 'dayOfWeek': day,
+                'startTime': '08:00:00', 'endTime': '18:00:00', 'slotDurationMinutes': 30, 'isActive': True})
+        service = self.create('/api/medical-services', {'name': 'Long ' + self.suffix,
+            'durationMinutes': 480, 'price': 50, 'isActive': True, 'specialtyId': specialty})
+        self.assertEqual(request(f'/api/medical-services/{service}/doctors/{doctor}', 'PUT')[0], 204)
+        self.addCleanup(request, f'/api/medical-services/{service}/doctors/{doctor}', 'DELETE')
+        slots = self.slots(doctor, service=service)
+        payload = {**self.booking(doctor), 'appointmentDate': slots[0]['startsAt'], 'medicalServiceId': service}
+        self.create('/api/appointments', payload)
+        remaining = self.slots(doctor)
+        self.assertEqual(len(remaining), 4)
+        self.assertEqual(remaining[0]['startsAt'], slots[0]['endsAt'])
+        overlap = dt.datetime.fromisoformat(slots[0]['endsAt']) - dt.timedelta(minutes=30)
+        self.assertEqual(request('/api/appointments', 'POST', {**payload, 'medicalServiceId': None,
+            'appointmentDate': overlap.isoformat()})[0], 409)
+        self.create('/api/appointments', {**payload, 'medicalServiceId': None, 'appointmentDate': remaining[0]['startsAt']})
+
     def test_input_validation(self):
         cases = [('/api/specialties', {'name': None}),
                  ('/api/specialties', {'name': 'x' * 101}),

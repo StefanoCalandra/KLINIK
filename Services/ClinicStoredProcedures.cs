@@ -10,8 +10,9 @@ namespace ClinicaAurora.Services;
 /// Unico punto di accesso alle stored procedure installate in KlinikDb.
 /// DbCommand mantiene i valori parametrizzati e impedisce SQL injection.
 /// </summary>
-public sealed class ClinicStoredProcedures(KlinikDbContext db)
+public sealed class ClinicStoredProcedures(KlinikDbContext db) : IAsyncDisposable
 {
+    private bool ownsOpenConnection;
     public async Task<List<DoctorResult>> SearchDoctorsAsync(int? specialtyId, int? locationId, bool onlyAvailable, CancellationToken cancellationToken)
     {
         await using var command = await CreateCommandAsync("dbo.usp_Doctor_Search", cancellationToken);
@@ -19,20 +20,43 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db)
         AddParameter(command, "@LocationId", DbType.Int32, locationId);
         AddParameter(command, "@OnlyAvailable", DbType.Boolean, onlyAvailable);
 
-        var results = new List<DoctorResult>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await ReadDoctorsAsync(reader, cancellationToken);
+    }
+
+    public async Task<ReferenceDataResult> GetReferenceDataAsync(CancellationToken cancellationToken)
+    {
+        await using var command = await CreateCommandAsync("dbo.usp_ReferenceData_Get", cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var specialties = await ReadReferenceItemsAsync(reader, cancellationToken);
+        await reader.NextResultAsync(cancellationToken);
+        var locations = await ReadReferenceItemsAsync(reader, cancellationToken);
+        await reader.NextResultAsync(cancellationToken);
+        return new ReferenceDataResult(specialties, locations, await ReadDoctorsAsync(reader, cancellationToken));
+    }
+
+    private static async Task<List<ReferenceItem>> ReadReferenceItemsAsync(DbDataReader reader, CancellationToken cancellationToken)
+    {
+        var results = new List<ReferenceItem>();
+        while (await reader.ReadAsync(cancellationToken)) results.Add(new ReferenceItem(reader.GetInt32(0), reader.GetString(1)));
+        return results;
+    }
+
+    private static async Task<List<DoctorResult>> ReadDoctorsAsync(DbDataReader reader, CancellationToken cancellationToken)
+    {
+        var results = new List<DoctorResult>();
+        var id = reader.GetOrdinal("Id");
+        var name = reader.GetOrdinal("FullName");
+        var biography = reader.GetOrdinal("Biography");
+        var available = reader.GetOrdinal("IsAvailable");
+        var specialtyId = reader.GetOrdinal("SpecialtyId");
+        var specialty = reader.GetOrdinal("Specialty");
+        var locationId = reader.GetOrdinal("LocationId");
+        var location = reader.GetOrdinal("Location");
         while (await reader.ReadAsync(cancellationToken))
-        {
-            results.Add(new DoctorResult(
-                reader.GetInt32(reader.GetOrdinal("Id")),
-                reader.GetString(reader.GetOrdinal("FullName")),
-                GetNullableString(reader, "Biography"),
-                reader.GetBoolean(reader.GetOrdinal("IsAvailable")),
-                reader.GetInt32(reader.GetOrdinal("SpecialtyId")),
-                reader.GetString(reader.GetOrdinal("Specialty")),
-                reader.GetInt32(reader.GetOrdinal("LocationId")),
-                reader.GetString(reader.GetOrdinal("Location"))));
-        }
+            results.Add(new DoctorResult(reader.GetInt32(id), reader.GetString(name), GetNullableString(reader, biography),
+                reader.GetBoolean(available), reader.GetInt32(specialtyId), reader.GetString(specialty),
+                reader.GetInt32(locationId), reader.GetString(location)));
         return results;
     }
 
@@ -46,23 +70,37 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db)
 
         var results = new List<AppointmentResult>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var colId = reader.GetOrdinal("Id");
+        var colPatientName = reader.GetOrdinal("PatientName");
+        var colPhone = reader.GetOrdinal("Phone");
+        var colEmail = reader.GetOrdinal("Email");
+        var colAppointmentDate = reader.GetOrdinal("AppointmentDate");
+        var colStatus = reader.GetOrdinal("Status");
+        var colNotes = reader.GetOrdinal("Notes");
+        var colDurationMinutes = reader.GetOrdinal("DurationMinutes");
+        var colMedicalServiceId = reader.GetOrdinal("MedicalServiceId");
+        var colDoctorId = reader.GetOrdinal("DoctorId");
+        var colDoctor = reader.GetOrdinal("Doctor");
+        var colSpecialty = reader.GetOrdinal("Specialty");
+        var colLocation = reader.GetOrdinal("Location");
+        var colCreatedAt = reader.GetOrdinal("CreatedAt");
         while (await reader.ReadAsync(cancellationToken))
         {
             results.Add(new AppointmentResult(
-                reader.GetInt32(reader.GetOrdinal("Id")),
-                reader.GetString(reader.GetOrdinal("PatientName")),
-                reader.GetString(reader.GetOrdinal("Phone")),
-                GetNullableString(reader, "Email"),
-                DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("AppointmentDate")), DateTimeKind.Utc),
-                reader.GetString(reader.GetOrdinal("Status")),
-                GetNullableString(reader, "Notes"),
-                reader.GetInt32(reader.GetOrdinal("DurationMinutes")),
-                reader.IsDBNull(reader.GetOrdinal("MedicalServiceId")) ? null : reader.GetInt32(reader.GetOrdinal("MedicalServiceId")),
-                reader.GetInt32(reader.GetOrdinal("DoctorId")),
-                reader.GetString(reader.GetOrdinal("Doctor")),
-                reader.GetString(reader.GetOrdinal("Specialty")),
-                HasColumn(reader, "Location") ? GetNullableString(reader, "Location") : null,
-                DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("CreatedAt")), DateTimeKind.Utc)));
+                reader.GetInt32(colId),
+                reader.GetString(colPatientName),
+                reader.GetString(colPhone),
+                GetNullableString(reader, colEmail),
+                DateTime.SpecifyKind(reader.GetDateTime(colAppointmentDate), DateTimeKind.Utc),
+                reader.GetString(colStatus),
+                GetNullableString(reader, colNotes),
+                reader.GetInt32(colDurationMinutes),
+                reader.IsDBNull(colMedicalServiceId) ? null : reader.GetInt32(colMedicalServiceId),
+                reader.GetInt32(colDoctorId),
+                reader.GetString(colDoctor),
+                reader.GetString(colSpecialty),
+                GetNullableString(reader, colLocation),
+                DateTime.SpecifyKind(reader.GetDateTime(colCreatedAt), DateTimeKind.Utc)));
         }
         return results;
     }
@@ -131,15 +169,21 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db)
         AddParameter(command, "@Search", DbType.String, search, 140);
         var results = new List<ProductResult>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var colId = reader.GetOrdinal("Id");
+        var colName = reader.GetOrdinal("Name");
+        var colCategory = reader.GetOrdinal("Category");
+        var colPrice = reader.GetOrdinal("Price");
+        var colStockQuantity = reader.GetOrdinal("StockQuantity");
+        var colDescription = reader.GetOrdinal("Description");
         while (await reader.ReadAsync(cancellationToken))
         {
             results.Add(new ProductResult(
-                reader.GetInt32(reader.GetOrdinal("Id")),
-                reader.GetString(reader.GetOrdinal("Name")),
-                reader.GetString(reader.GetOrdinal("Category")),
-                reader.GetDecimal(reader.GetOrdinal("Price")),
-                reader.GetInt32(reader.GetOrdinal("StockQuantity")),
-                GetNullableString(reader, "Description")));
+                reader.GetInt32(colId),
+                reader.GetString(colName),
+                reader.GetString(colCategory),
+                reader.GetDecimal(colPrice),
+                reader.GetInt32(colStockQuantity),
+                GetNullableString(reader, colDescription)));
         }
         return results;
     }
@@ -157,12 +201,26 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db)
     private async Task<DbCommand> CreateCommandAsync(string name, CancellationToken cancellationToken)
     {
         var connection = db.Database.GetDbConnection();
-        if (connection.State != ConnectionState.Open) await connection.OpenAsync(cancellationToken);
+        if (connection.State != ConnectionState.Open)
+        {
+            await db.Database.OpenConnectionAsync(cancellationToken);
+            ownsOpenConnection = true;
+        }
         var command = connection.CreateCommand();
         command.CommandText = name;
         command.CommandType = CommandType.StoredProcedure;
         command.CommandTimeout = 30;
         return command;
+    }
+
+    // Ripristina lo stato del driver prima di restituire il DbContext al pool.
+    public async ValueTask DisposeAsync()
+    {
+        if (ownsOpenConnection)
+        {
+            await db.Database.CloseConnectionAsync();
+            ownsOpenConnection = false;
+        }
     }
 
     private static void AddParameter(DbCommand command, string name, DbType type, object? value, int? size = null)
@@ -175,16 +233,6 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db)
         command.Parameters.Add(parameter);
     }
 
-    private static string? GetNullableString(DbDataReader reader, string name)
-    {
-        var ordinal = reader.GetOrdinal(name);
-        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
-    }
-
-    private static bool HasColumn(DbDataReader reader, string name)
-    {
-        for (var index = 0; index < reader.FieldCount; index++)
-            if (string.Equals(reader.GetName(index), name, StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
-    }
+    private static string? GetNullableString(DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 }

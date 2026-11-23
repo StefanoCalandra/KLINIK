@@ -35,6 +35,9 @@ AS RETURN (
         WHERE s.DoctorId=@DoctorId AND s.IsActive=1
           AND s.DayOfWeek=((DATEDIFF(day, CONVERT(date,'19000107'), @Date)%7)+7)%7
           AND s.SlotDurationMinutes BETWEEN 10 AND 240
+          -- Limita i candidati prima delle conversioni di fuso orario.
+          AND n.n*s.SlotDurationMinutes*60 + COALESCE(@DurationMinutes,ms.DurationMinutes,s.SlotDurationMinutes)*60
+              <= DATEDIFF(second,s.StartTime,s.EndTime)
           AND (@MedicalServiceId IS NULL OR (ms.Id IS NOT NULL AND EXISTS (
               SELECT 1 FROM dbo.DoctorServices ds WHERE ds.DoctorId=@DoctorId AND ds.MedicalServiceId=ms.Id)))
     ), UtcSlots AS (
@@ -55,6 +58,9 @@ AS RETURN (
       AND NOT EXISTS (SELECT 1 FROM dbo.Appointments a
           WHERE a.DoctorId=@DoctorId AND a.Status<>N'Annullata'
             AND (@ExcludeAppointmentId IS NULL OR a.Id<>@ExcludeAppointmentId)
+            -- CK_Appointments_Duration garantisce al massimo 480 minuti.
+            -- La ricerca indicizzata non deve rileggere tutto lo storico del medico.
+            AND a.AppointmentDate>DATEADD(minute,-480,s.StartsAt)
             AND a.AppointmentDate<DATEADD(minute,s.DurationMinutes,s.StartsAt)
             AND DATEADD(minute,a.DurationMinutes,a.AppointmentDate)>s.StartsAt)
     GROUP BY StartsAt
@@ -249,6 +255,17 @@ BEGIN
 END;
 GO
 
+-- Tre result set in un solo comando/collegamento, senza cache di dati modificabili.
+CREATE OR ALTER PROCEDURE dbo.usp_ReferenceData_Get
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id,Name FROM dbo.Specialties ORDER BY Name,Id;
+    SELECT Id,Name FROM dbo.Locations ORDER BY Name,Id;
+    EXEC dbo.usp_Doctor_Search;
+END;
+GO
+
 CREATE OR ALTER PROCEDURE dbo.usp_Appointment_GetRange
     @From datetime2,
     @To datetime2,
@@ -331,6 +348,15 @@ IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE name=N'UQ_Appointments_Doctor
 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_Appointments_DoctorId_AppointmentDate' AND object_id=OBJECT_ID(N'dbo.Appointments') AND has_filter=0)
     DROP INDEX IX_Appointments_DoctorId_AppointmentDate ON dbo.Appointments;
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_Appointments_DoctorId_AppointmentDate' AND object_id=OBJECT_ID(N'dbo.Appointments'))
-    CREATE UNIQUE INDEX IX_Appointments_DoctorId_AppointmentDate ON dbo.Appointments(DoctorId, AppointmentDate) WHERE Status<>N'Annullata';
+    CREATE UNIQUE INDEX IX_Appointments_DoctorId_AppointmentDate ON dbo.Appointments(DoctorId, AppointmentDate) INCLUDE (DurationMinutes) WHERE Status<>N'Annullata';
+-- Aggiorna l'indice filtrato già installato senza aggiungere un indice duplicato.
+IF NOT EXISTS (SELECT 1 FROM sys.index_columns ic
+    JOIN sys.indexes i ON i.object_id=ic.object_id AND i.index_id=ic.index_id
+    JOIN sys.columns c ON c.object_id=ic.object_id AND c.column_id=ic.column_id
+    WHERE i.object_id=OBJECT_ID(N'dbo.Appointments') AND i.name=N'IX_Appointments_DoctorId_AppointmentDate'
+      AND c.name=N'DurationMinutes' AND ic.is_included_column=1)
+    CREATE UNIQUE INDEX IX_Appointments_DoctorId_AppointmentDate
+        ON dbo.Appointments(DoctorId,AppointmentDate) INCLUDE (DurationMinutes)
+        WHERE Status<>N'Annullata' WITH (DROP_EXISTING=ON);
 COMMIT;
 GO

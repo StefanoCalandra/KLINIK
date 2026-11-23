@@ -12,6 +12,8 @@ public static class ClinicEndpoints
     public static IEndpointRouteBuilder MapClinicEndpoints(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api").AddEndpointFilter<RequestValidationFilter>();
+        api.MapGet("/reference-data", async (ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
+            await procedures.GetReferenceDataAsync(cancellationToken));
         MapSpecialties(api);
         MapLocations(api);
         MapDoctors(api);
@@ -231,7 +233,7 @@ public static class ClinicEndpoints
     private static void MapMedicalServices(RouteGroupBuilder api)
     {
         var group = api.MapGroup("/medical-services");
-        group.MapGet("/", async (int? specialtyId, int? doctorId, bool? active, KlinikDbContext db) =>
+        group.MapGet("/", async (int? specialtyId, int? doctorId, bool? active, KlinikDbContext db, CancellationToken cancellationToken) =>
         {
             var query = db.MedicalServices.AsNoTracking().AsQueryable();
             if (specialtyId.HasValue) query = query.Where(item => item.SpecialtyId == specialtyId);
@@ -241,7 +243,7 @@ public static class ClinicEndpoints
             {
                 item.Id, item.Name, item.Description, item.DurationMinutes, item.Price,
                 item.IsActive, item.SpecialtyId, Specialty = item.Specialty!.Name
-            }).ToListAsync();
+            }).ToListAsync(cancellationToken);
         });
         group.MapPost("/", async (MedicalServiceRequest request, KlinikDbContext db) =>
         {
