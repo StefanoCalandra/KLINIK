@@ -19,7 +19,34 @@ public static class ClinicEndpoints
         MapProducts(api);
         MapMedicalServices(api);
         MapDoctorSchedules(api);
+        MapCalendar(api);
         return app;
+    }
+
+    private static void MapCalendar(RouteGroupBuilder api)
+    {
+        api.MapGet("/doctors/{id:int}/slots", async (int id, DateOnly date, int? medicalServiceId,
+            KlinikDbContext db, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
+        {
+            if (date.Year is < 2000 or > 2099) return Validation("La data deve essere compresa tra 2000 e 2099.");
+            if (!await db.Doctors.AnyAsync(x => x.Id == id, cancellationToken)) return Results.NotFound();
+            return Results.Ok(await procedures.GetSlotsAsync(id, date, medicalServiceId, cancellationToken));
+        });
+        var absences = api.MapGroup("/doctor-absences");
+        absences.MapGet("/", async (int doctorId, KlinikDbContext db, CancellationToken cancellationToken) =>
+            await db.DoctorAbsences.AsNoTracking().Where(x => x.DoctorId == doctorId).OrderBy(x => x.StartsAt)
+                .Select(x => new { x.Id, x.DoctorId, x.StartsAt, x.EndsAt }).ToListAsync(cancellationToken));
+        absences.MapPost("/", async (DoctorAbsenceRequest request, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
+        {
+            if (request.StartsAt >= request.EndsAt) return Validation("Intervallo di assenza non valido.");
+            try
+            {
+                var id = await procedures.CreateAbsenceAsync(request, cancellationToken);
+                return Results.Created($"/api/doctor-absences?doctorId={request.DoctorId}", new { id });
+            }
+            catch (SqlException exception) when (exception.Number is >= 50000 and <= 59999) { return StoredProcedureProblem(exception); }
+        });
+        absences.MapDelete("/{id:int}", (int id, KlinikDbContext db) => DeleteAsync(db, db.DoctorAbsences, id));
     }
 
     private static void MapSpecialties(RouteGroupBuilder api)
@@ -127,7 +154,7 @@ public static class ClinicEndpoints
             var item = await db.Appointments.AsNoTracking().Where(x => x.Id == id).Select(x => new
             {
                 x.Id, x.PatientName, x.Phone, x.Email, x.AppointmentDate, x.Status,
-                x.Notes, x.DoctorId, Doctor = x.Doctor!.FullName, Specialty = x.Doctor.Specialty!.Name, x.CreatedAt
+                x.Notes, x.DurationMinutes, x.MedicalServiceId, x.DoctorId, Doctor = x.Doctor!.FullName, Specialty = x.Doctor.Specialty!.Name, x.CreatedAt
             }).FirstOrDefaultAsync();
             if (item is null) return Results.NotFound();
             return Results.Ok(item);
@@ -136,25 +163,18 @@ public static class ClinicEndpoints
         {
             try
             {
-                var result = await procedures.CreateAppointmentAsync(request, cancellationToken);
+                var result = await procedures.SaveAppointmentAsync(request, cancellationToken);
                 return Results.Created($"/api/appointments/{result.Id}", result);
             }
-            catch (SqlException exception) when (exception.Number is >= 50001 and <= 50005)
+            catch (SqlException exception) when (exception.Number is >= 50000 and <= 59999)
             {
                 return StoredProcedureProblem(exception);
             }
         });
-        group.MapPut("/{id:int}", async (int id, AppointmentRequest request, KlinikDbContext db) =>
+        group.MapPut("/{id:int}", async (int id, AppointmentRequest request, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
         {
-            var item = await db.Appointments.FindAsync(id); if (item is null) return Results.NotFound();
-            var error = await ValidateAppointmentAsync(request, db, id, item.Status); if (error is not null) return error;
-            item.PatientName = request.PatientName.Trim(); item.Phone = request.Phone.Trim(); item.Email = request.Email?.Trim();
-            item.AppointmentDate = request.AppointmentDate.UtcDateTime; item.Status = string.IsNullOrWhiteSpace(request.Status) ? item.Status : request.Status.Trim();
-            item.Notes = request.Notes?.Trim(); item.DoctorId = request.DoctorId;
-            try { await db.SaveChangesAsync(); }
-            catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
-            { return Results.Conflict(new { message = "Questo orario non è più disponibile." }); }
-            return Results.NoContent();
+            try { await procedures.SaveAppointmentAsync(request, cancellationToken, id); return Results.NoContent(); }
+            catch (SqlException exception) when (exception.Number is >= 50000 and <= 59999) { return StoredProcedureProblem(exception); }
         });
         group.MapPost("/{id:int}/cancel", async (int id, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
         {
@@ -211,11 +231,12 @@ public static class ClinicEndpoints
     private static void MapMedicalServices(RouteGroupBuilder api)
     {
         var group = api.MapGroup("/medical-services");
-        group.MapGet("/", async (int? specialtyId, bool? active, KlinikDbContext db) =>
+        group.MapGet("/", async (int? specialtyId, int? doctorId, bool? active, KlinikDbContext db) =>
         {
             var query = db.MedicalServices.AsNoTracking().AsQueryable();
             if (specialtyId.HasValue) query = query.Where(item => item.SpecialtyId == specialtyId);
             if (active.HasValue) query = query.Where(item => item.IsActive == active);
+            if (doctorId.HasValue) query = query.Where(item => item.DoctorServices.Any(link => link.DoctorId == doctorId));
             return await query.OrderBy(item => item.Name).Select(item => new
             {
                 item.Id, item.Name, item.Description, item.DurationMinutes, item.Price,
@@ -289,17 +310,6 @@ public static class ClinicEndpoints
         if (!await db.Specialties.AnyAsync(x => x.Id == request.SpecialtyId)) return Validation("Specialità inesistente.");
         if (!await db.Locations.AnyAsync(x => x.Id == request.LocationId)) return Validation("Sede inesistente.");
         return null;
-    }
-
-    private static async Task<IResult?> ValidateAppointmentAsync(AppointmentRequest request, KlinikDbContext db, int? currentId = null, string? currentStatus = null)
-    {
-        if (string.IsNullOrWhiteSpace(request.PatientName) || string.IsNullOrWhiteSpace(request.Phone)) return Validation("Nome e telefono sono obbligatori.");
-        if (request.AppointmentDate <= DateTimeOffset.UtcNow) return Validation("La data deve essere futura.");
-        if (!await db.Doctors.AnyAsync(x => x.Id == request.DoctorId && x.IsAvailable)) return Validation("Medico inesistente o non disponibile.");
-        var date = request.AppointmentDate.UtcDateTime;
-        var effectiveStatus = string.IsNullOrWhiteSpace(request.Status) ? currentStatus : request.Status;
-        var occupied = effectiveStatus != "Annullata" && await db.Appointments.AnyAsync(x => x.DoctorId == request.DoctorId && x.AppointmentDate == date && x.Status != "Annullata" && x.Id != currentId);
-        return occupied ? Results.Conflict(new { message = "Questo orario non è più disponibile." }) : null;
     }
 
     private static IResult? ValidateProduct(ProductRequest request)

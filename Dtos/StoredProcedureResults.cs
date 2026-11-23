@@ -18,6 +18,8 @@ public sealed record AppointmentResult(
     DateTime AppointmentDate,
     string Status,
     string? Notes,
+    int DurationMinutes,
+    int? MedicalServiceId,
     int DoctorId,
     string Doctor,
     string Specialty,
@@ -34,3 +36,5 @@ public sealed record ProductResult(
 
 public sealed record AppointmentCreatedResult(int Id, string Status);
 public sealed record StockResult(int Id, int StockQuantity);
+
+public sealed record SlotResult(DateTime StartsAt, DateTime EndsAt, int DurationMinutes);

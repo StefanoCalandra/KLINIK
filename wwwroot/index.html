@@ -140,7 +140,10 @@
       <label>Telefono<input name="phone" required maxlength="30" type="tel" autocomplete="tel" placeholder="+39 333 000 0000"></label>
       <label>Email<input name="email" maxlength="150" type="email" autocomplete="email" placeholder="mario@esempio.it"></label>
       <label>Medico<select name="doctorId" id="bookingDoctor" required><option value="">Seleziona un medico</option></select></label>
-      <label>Data e ora<input name="appointmentDate" id="bookingDate" required type="datetime-local"></label>
+      <label>Prestazione<select name="medicalServiceId" id="bookingService"><option value="">Visita standard del turno</option></select></label>
+      <label>Giorno<input id="bookingDate" required type="date" max="2099-12-31"></label>
+      <label>Orario disponibile<select name="appointmentDate" id="bookingSlot" required aria-describedby="slotMessage"><option value="">Scegli medico e giorno</option></select></label>
+      <p id="slotMessage" role="status" aria-live="polite">Gli orari sono espressi nel fuso della clinica (Roma).</p>
       <label>Note<textarea name="notes" maxlength="1000" rows="3" placeholder="Informazioni utili per la visita (facoltative)"></textarea></label>
       <p class="form-error" role="alert" hidden></p>
       <button class="btn btn-primary" type="submit">Richiedi appuntamento →</button>
@@ -150,6 +153,6 @@
 
   <!-- Simbolo SVG riutilizzabile dai pulsanti di ricerca. -->
   <svg class="svg-defs" aria-hidden="true"><symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16.5 16.5 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol></svg>
-  <script src="script.js?v=20261022" defer></script>
+  <script src="script.js?v=20261113" defer></script>
 </body>
 </html>

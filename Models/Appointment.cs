@@ -23,6 +23,10 @@ public sealed class Appointment
     [MaxLength(1000)]
     public string? Notes { get; set; }
 
+    public int DurationMinutes { get; set; } = 30;
+    public int? MedicalServiceId { get; set; }
+    public MedicalService? MedicalService { get; set; }
+
     public int DoctorId { get; set; }
     public Doctor? Doctor { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

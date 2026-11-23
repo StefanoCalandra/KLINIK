@@ -21,7 +21,8 @@ public sealed record AppointmentRequest(
     DateTimeOffset AppointmentDate,
     [property: RegularExpression("In attesa|Confermata|Completata|Annullata|Assente")] string? Status,
     [property: StringLength(1000)] string? Notes,
-    [property: Range(1, int.MaxValue)] int DoctorId);
+    [property: Range(1, int.MaxValue)] int DoctorId,
+    [property: Range(1, int.MaxValue)] int? MedicalServiceId = null);
 public sealed record ProductRequest(
     [property: Required, StringLength(140)] string Name,
     [property: Required, StringLength(80)] string Category,
@@ -42,3 +43,7 @@ public sealed record DoctorScheduleRequest(
     [property: EnumDataType(typeof(DayOfWeek))] DayOfWeek DayOfWeek,
     TimeOnly StartTime, TimeOnly EndTime,
     [property: Range(10, 240)] int SlotDurationMinutes, bool IsActive);
+
+public sealed record DoctorAbsenceRequest(
+    [property: Range(1, int.MaxValue)] int DoctorId,
+    DateTimeOffset StartsAt, DateTimeOffset EndsAt);

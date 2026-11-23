@@ -22,6 +22,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="database\expansion.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="database\calendar-schema.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Update="database\stored-procedures.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

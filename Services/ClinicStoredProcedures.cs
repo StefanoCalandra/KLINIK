@@ -56,6 +56,8 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db)
                 DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("AppointmentDate")), DateTimeKind.Utc),
                 reader.GetString(reader.GetOrdinal("Status")),
                 GetNullableString(reader, "Notes"),
+                reader.GetInt32(reader.GetOrdinal("DurationMinutes")),
+                reader.IsDBNull(reader.GetOrdinal("MedicalServiceId")) ? null : reader.GetInt32(reader.GetOrdinal("MedicalServiceId")),
                 reader.GetInt32(reader.GetOrdinal("DoctorId")),
                 reader.GetString(reader.GetOrdinal("Doctor")),
                 reader.GetString(reader.GetOrdinal("Specialty")),
@@ -65,19 +67,46 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db)
         return results;
     }
 
-    public async Task<AppointmentCreatedResult> CreateAppointmentAsync(AppointmentRequest request, CancellationToken cancellationToken)
+    public async Task<AppointmentCreatedResult> SaveAppointmentAsync(AppointmentRequest request, CancellationToken cancellationToken, int? appointmentId = null)
     {
-        await using var command = await CreateCommandAsync("dbo.usp_Appointment_Create", cancellationToken);
+        await using var command = await CreateCommandAsync("dbo.usp_Appointment_Save", cancellationToken);
         AddParameter(command, "@PatientName", DbType.String, request.PatientName, 120);
         AddParameter(command, "@Phone", DbType.String, request.Phone, 30);
         AddParameter(command, "@Email", DbType.String, request.Email, 150);
         AddParameter(command, "@AppointmentDate", DbType.DateTime2, request.AppointmentDate.UtcDateTime);
         AddParameter(command, "@DoctorId", DbType.Int32, request.DoctorId);
         AddParameter(command, "@Notes", DbType.String, request.Notes, 1000);
+        AddParameter(command, "@MedicalServiceId", DbType.Int32, request.MedicalServiceId);
+        AddParameter(command, "@AppointmentId", DbType.Int32, appointmentId);
+        // La creazione pubblica avvia sempre una richiesta in attesa.
+        AddParameter(command, "@Status", DbType.String, appointmentId.HasValue ? request.Status : null, 30);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) throw new InvalidOperationException("La procedura non ha restituito la prenotazione creata.");
         return new AppointmentCreatedResult(reader.GetInt32(reader.GetOrdinal("Id")), reader.GetString(reader.GetOrdinal("Status")));
+    }
+
+    public async Task<List<SlotResult>> GetSlotsAsync(int doctorId, DateOnly date, int? medicalServiceId, CancellationToken cancellationToken)
+    {
+        await using var command = await CreateCommandAsync("dbo.usp_Doctor_GetSlots", cancellationToken);
+        AddParameter(command, "@DoctorId", DbType.Int32, doctorId);
+        AddParameter(command, "@Date", DbType.Date, date.ToDateTime(TimeOnly.MinValue));
+        AddParameter(command, "@MedicalServiceId", DbType.Int32, medicalServiceId);
+        var results = new List<SlotResult>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(new SlotResult(DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc),
+                DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc), reader.GetInt32(2)));
+        return results;
+    }
+
+    public async Task<int> CreateAbsenceAsync(DoctorAbsenceRequest request, CancellationToken cancellationToken)
+    {
+        await using var command = await CreateCommandAsync("dbo.usp_DoctorAbsence_Create", cancellationToken);
+        AddParameter(command, "@DoctorId", DbType.Int32, request.DoctorId);
+        AddParameter(command, "@StartsAt", DbType.DateTime2, request.StartsAt.UtcDateTime);
+        AddParameter(command, "@EndsAt", DbType.DateTime2, request.EndsAt.UtcDateTime);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
     public async Task CancelAppointmentAsync(int appointmentId, CancellationToken cancellationToken)

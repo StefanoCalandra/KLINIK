@@ -451,7 +451,7 @@ Per misurare le prestazioni reali è consigliato usare Lighthouse e la scheda Ne
 
 Attualmente:
 
-- i medici e le prenotazioni sono nel database, ma non esiste ancora un calendario completo degli slot;
+- il calendario propone slot reali da turni, prestazioni e assenze; il personale gestisce turni e assenze tramite API, senza un pannello amministrativo;
 - il form salva dati di contatto, ma non invia ancora email o promemoria;
 - la farmacia non contiene catalogo, carrello o pagamenti;
 - non esistono login, area paziente o area amministrativa;
@@ -571,3 +571,15 @@ nel frattempo occupato restituisce `409`.
 `category` e `search`; senza `active=false` vengono mostrati i prodotti attivi disponibili.
 Le richieste non valide restituiscono `400`, i duplicati e i conflitti `409`, gli
 indirizzi API inesistenti `404`.
+
+### Calendario degli slot reali
+
+Nel modulo di prenotazione scegliere medico, prestazione opzionale, giorno e uno
+degli orari disponibili. Gli orari sono quelli della clinica (Roma), anche per
+visitatori in altri fusi. Il backend ricontrolla turni, durata, prenotazioni e
+assenze al salvataggio; in caso di conflitto il modulo aggiorna gli orari e richiede
+una nuova scelta. Annullare una visita libera il relativo intervallo.
+
+Il backend aggiorna automaticamente lo schema al primo avvio della nuova versione.
+Per dettagli sulle API, sulle durate storiche e sull'installazione manuale vedere
+[database/README.md](database/README.md#calendario-e-prenotazioni).

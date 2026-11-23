@@ -44,19 +44,32 @@ class ApiTests(unittest.TestCase):
         status, body = request(path, 'DELETE')
         self.assertIn(status, (204, 404), (path, body))
 
-    def doctor(self):
+    def doctor(self, with_schedule=True):
         specialty = self.create('/api/specialties', {'name': 'Test ' + self.suffix})
         location = self.create('/api/locations', {'name': 'Test ' + self.suffix})
         doctor = self.create('/api/doctors', {
             'fullName': 'Test ' + self.suffix, 'isAvailable': True,
             'specialtyId': specialty, 'locationId': location})
+        if with_schedule:
+            for day in range(7):
+                self.create('/api/doctor-schedules', {'doctorId': doctor, 'dayOfWeek': day,
+                    'startTime': '09:00:00', 'endTime': '13:00:00', 'slotDurationMinutes': 30, 'isActive': True})
         return doctor, specialty, location
 
+    def slots(self, doctor, date=None, service=None):
+        date = date or (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=7)).date().isoformat()
+        query = {'date': date}
+        if service is not None:
+            query['medicalServiceId'] = service
+        status, body = request(f'/api/doctors/{doctor}/slots?' + urllib.parse.urlencode(query))
+        self.assertEqual(status, 200, body)
+        return body
+
     def booking(self, doctor):
+        slots = self.slots(doctor)
+        self.assertTrue(slots)
         return {'patientName': 'Test Patient', 'phone': '+39 000 000000',
-                'doctorId': doctor, 'status': 'In attesa',
-                'appointmentDate': (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=7))
-                .replace(microsecond=0).isoformat()}
+                'doctorId': doctor, 'status': 'In attesa', 'appointmentDate': slots[0]['startsAt']}
 
     def test_reference_data_and_routes(self):
         for path in ['/api/specialties', '/api/locations', '/api/doctors',
@@ -166,7 +179,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(request(f'/api/products/{product}/decrease-stock', 'POST', {'quantity': 0})[0], 400)
 
     def test_services_and_schedules(self):
-        doctor, specialty, _ = self.doctor()
+        doctor, specialty, _ = self.doctor(with_schedule=False)
         service = self.create('/api/medical-services', {'name': 'Test ' + self.suffix,
             'durationMinutes': 30, 'price': 50, 'isActive': True, 'specialtyId': specialty})
         link = f'/api/medical-services/{service}/doctors/{doctor}'
@@ -179,6 +192,111 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(request('/api/doctor-schedules', 'POST', schedule_payload)[0], 409)
         self.assertEqual(request(f'/api/doctor-schedules/{schedule}', 'PUT', schedule_payload)[0], 204)
         self.assertEqual(len(request(f'/api/doctor-schedules?doctorId={doctor}')[1]), 1)
+
+    def test_slots_enforce_schedule_and_cancellation(self):
+        doctor, _, _ = self.doctor()
+        before = self.slots(doctor)
+        self.assertEqual(len(before), 8)
+        self.assertTrue(before[0]['startsAt'].endswith('Z'))
+        payload = self.booking(doctor)
+        invalid = {**payload, 'appointmentDate':
+            (dt.datetime.fromisoformat(payload['appointmentDate']) + dt.timedelta(minutes=5)).isoformat()}
+        self.assertEqual(request('/api/appointments', 'POST', invalid)[0], 409)
+        appointment = self.create('/api/appointments', payload)
+        self.assertEqual(len(self.slots(doctor)), 7)
+        self.assertEqual(request(f'/api/appointments/{appointment}', 'PUT', invalid)[0], 409)
+        self.assertEqual(request(f'/api/appointments/{appointment}/cancel', 'POST')[0], 204)
+        self.assertEqual(len(self.slots(doctor)), 8)
+        self.assertEqual(request(f'/api/appointments/{appointment}/status', 'PUT', {'status': 'Confermata'})[0], 204)
+        self.assertEqual(len(self.slots(doctor)), 7)
+        self.assertEqual(self.slots(doctor, '2000-01-01'), [])
+        self.assertEqual(request(f'/api/doctors/{doctor}/slots?date=9999-12-31')[0], 400)
+        self.assertEqual(request('/api/doctors/2147483647/slots?date=2030-01-01')[0], 404)
+
+    def test_service_duration_prevents_overlaps(self):
+        doctor, specialty, _ = self.doctor()
+        service = self.create('/api/medical-services', {'name': 'Calendar ' + self.suffix,
+            'durationMinutes': 45, 'price': 50, 'isActive': True, 'specialtyId': specialty})
+        self.assertEqual(self.slots(doctor, service=service), [])
+        self.assertEqual(request(f'/api/medical-services/{service}/doctors/{doctor}', 'PUT')[0], 204)
+        self.addCleanup(request, f'/api/medical-services/{service}/doctors/{doctor}', 'DELETE')
+        before = self.slots(doctor, service=service)
+        self.assertEqual(len(before), 7)
+        self.assertEqual(before[0]['durationMinutes'], 45)
+        payload = {**self.booking(doctor), 'medicalServiceId': service}
+        appointment = self.create('/api/appointments', payload)
+        self.assertEqual(request(f'/api/appointments/{appointment}')[1]['durationMinutes'], 45)
+        self.assertEqual(len(self.slots(doctor)), 6)
+        # Un altro inizio, ma una visita sovrapposta, deve essere rifiutato.
+        overlap = {**payload, 'appointmentDate': before[1]['startsAt']}
+        self.assertEqual(request('/api/appointments', 'POST', overlap)[0], 409)
+        self.assertEqual(request(f'/api/appointments/{appointment}/cancel', 'POST')[0], 204)
+        other = self.create('/api/appointments', overlap)
+        self.assertEqual(request(f'/api/appointments/{appointment}/status', 'PUT', {'status': 'Confermata'})[0], 409)
+        self.assertEqual(request(f'/api/appointments/{appointment}')[1]['status'], 'Annullata')
+
+    def test_absences_block_slots_and_conflicting_absences(self):
+        doctor, _, _ = self.doctor()
+        before = self.slots(doctor)
+        absence_payload = {'doctorId': doctor, 'startsAt': before[0]['startsAt'], 'endsAt': before[1]['endsAt']}
+        absence = self.create('/api/doctor-absences', absence_payload)
+        self.assertEqual(len(self.slots(doctor)), 6)
+        payload = {**self.booking(doctor), 'appointmentDate': before[0]['startsAt']}
+        self.assertEqual(request('/api/appointments', 'POST', payload)[0], 409)
+        self.assertEqual(request(f'/api/doctor-absences/{absence}', 'DELETE')[0], 204)
+        appointment = self.create('/api/appointments', payload)
+        self.assertEqual(request('/api/doctor-absences', 'POST', absence_payload)[0], 409)
+        self.assertEqual(request('/api/doctor-absences', 'POST', {**absence_payload, 'endsAt': absence_payload['startsAt']})[0], 400)
+        self.assertEqual(request(f'/api/appointments/{appointment}/cancel', 'POST')[0], 204)
+        absence = self.create('/api/doctor-absences', absence_payload)
+        self.assertEqual(request(f'/api/appointments/{appointment}/status', 'PUT', {'status': 'Confermata'})[0], 409)
+
+    def test_concurrent_overlapping_visits_and_absence(self):
+        doctor, specialty, _ = self.doctor()
+        service = self.create('/api/medical-services', {'name': 'Concurrent ' + self.suffix,
+            'durationMinutes': 45, 'price': 50, 'isActive': True, 'specialtyId': specialty})
+        request(f'/api/medical-services/{service}/doctors/{doctor}', 'PUT')
+        self.addCleanup(request, f'/api/medical-services/{service}/doctors/{doctor}', 'DELETE')
+        slots = self.slots(doctor, service=service)
+        payload = {**self.booking(doctor), 'medicalServiceId': service}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda slot: request('/api/appointments', 'POST',
+                {**payload, 'appointmentDate': slot['startsAt']}), slots[:2]))
+        for status, body in results:
+            if status == 201:
+                self.addCleanup(self.remove, f"/api/appointments/{body['id']}")
+                self.assertEqual(request(f"/api/appointments/{body['id']}/cancel", 'POST')[0], 204)
+        self.assertEqual(sorted(status for status, _ in results), [201, 409], results)
+        absence = {'doctorId': doctor, 'startsAt': slots[0]['startsAt'], 'endsAt': slots[0]['endsAt']}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            calls = [('/api/appointments', payload), ('/api/doctor-absences', absence)]
+            results = list(pool.map(lambda call: request(call[0], 'POST', call[1]), calls))
+        for (path, _), (status, body) in zip(calls, results):
+            if status == 201:
+                self.addCleanup(self.remove, f"{path}/{body['id']}")
+        self.assertEqual(sorted(status for status, _ in results), [201, 409], results)
+
+    def test_clinic_timezone_winter_summer_and_dst(self):
+        from zoneinfo import ZoneInfo
+        doctor, _, _ = self.doctor()
+        year = dt.datetime.now(dt.timezone.utc).year + 1
+        for month in [1, 7]:
+            date = f'{year}-{month:02d}-15'
+            slots = self.slots(doctor, date)
+            first = dt.datetime.fromisoformat(slots[0]['startsAt'])
+            self.assertEqual(first.astimezone(ZoneInfo('Europe/Rome')).hour, 9)
+            self.assertEqual(first.hour, 8 if month == 1 else 7)
+        # Ultima domenica di marzo: l'ora 02:xx non esiste in Europe/Rome.
+        date = dt.date(year, 3, 31)
+        while date.weekday() != 6:
+            date -= dt.timedelta(days=1)
+        self.create('/api/doctor-schedules', {'doctorId': doctor, 'dayOfWeek': 0,
+            'startTime': '01:00:00', 'endTime': '04:00:00', 'slotDurationMinutes': 30, 'isActive': True})
+        slots = self.slots(doctor, date.isoformat())
+        starts = [x['startsAt'] for x in slots]
+        self.assertEqual(len(starts), len(set(starts)))
+        self.assertFalse(any(dt.datetime.fromisoformat(x).astimezone(ZoneInfo('Europe/Rome')).hour == 2 for x in starts))
+        self.assertTrue(any(dt.datetime.fromisoformat(x).astimezone(ZoneInfo('Europe/Rome')).hour == 3 for x in starts))
 
 
 if __name__ == '__main__':
