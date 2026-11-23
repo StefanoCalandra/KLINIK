@@ -15,7 +15,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Comprime HTML, CSS, JavaScript e SVG con Brotli/Gzip quando il browser lo
 // supporta. EnableForHttps è necessario perché il profilo principale usa HTTPS.
 builder.Services.AddResponseCompression(options => options.EnableForHttps = true);
-builder.Services.AddDbContext<KlinikDbContext>(options =>
+builder.Services.AddDbContextPool<KlinikDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("KlinikDatabase")));
 builder.Services.AddScoped<ClinicStoredProcedures>();
 
@@ -67,7 +67,7 @@ app.MapFallbackToFile("index.html");
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KlinikDbContext>();
-    await DatabaseInitializer.InitializeAsync(db);
+    await DatabaseInitializer.InitializeAsync(db, builder.Configuration.GetValue<bool>("Database:ReapplyScripts"));
 }
 
 // Avvia Kestrel sugli indirizzi definiti in Properties/launchSettings.json.

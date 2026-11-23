@@ -583,3 +583,39 @@ una nuova scelta. Annullare una visita libera il relativo intervallo.
 Il backend aggiorna automaticamente lo schema al primo avvio della nuova versione.
 Per dettagli sulle API, sulle durate storiche e sull'installazione manuale vedere
 [database/README.md](database/README.md#calendario-e-prenotazioni).
+
+### Ottimizzazioni di pagina, .NET e SQL
+
+- Il caricamento iniziale usa `GET /api/reference-data`: un solo comando SQL con
+  tre result set sostituisce tre richieste HTTP. Le API precedenti restano disponibili.
+  I dati sono letti dal database a ogni richiesta, senza cache applicativa obsoleta.
+- Il calendario annulla le richieste superate quando si cambia medico/giorno o si
+  chiude il dialog; riutilizza i formatter di data/ora invece di ricrearli a ogni caricamento.
+- Il backend usa il pool dei DbContext e chiude le connessioni aperte dal servizio
+  prima di restituire il contesto al pool. Gli ordinali delle colonne vengono risolti
+  una volta per result set, invece che per ogni riga.
+- Gli script di aggiornamento sono identificati da SHA-256 in `KlinikScriptVersions`:
+  al riavvio vengono saltati quelli invariati. Un lock applicativo e una transazione
+  proteggono applicazione e registrazione delle versioni. Se cambia uno script,
+  vengono riapplicati anche quelli successivi da cui dipende l'installazione.
+- La ricerca degli slot usa un intervallo indicizzato e limitato: il vincolo sulla
+  durata massima di 480 minuti permette di escludere gli appuntamenti storici più
+  lontani. L'indice filtrato esistente include la durata; non viene aggiunto un
+  secondo indice equivalente. Restano attivi i controlli sulle sovrapposizioni.
+
+Per valutare l'esecuzione in Visual Studio selezionare **Release** e usare
+**Ctrl+F5**; il debugger e la configurazione Debug non rappresentano le prestazioni
+in produzione. Da terminale: `dotnet build ClinicaAurora.sln -c Release`.
+
+Sul database di prova, con 100.000 appuntamenti storici e dieci ricerche dello
+stesso calendario (cache riscaldata), il confronto ha restituito sempre 8 slot:
+149.074 ms prima e 55 ms dopo, con letture logiche di `Appointments` scese da
+1.620 a 32 per ricerca. Nel browser le richieste API iniziali sono passate da 3
+(2.148 byte compressi) a 1 (1.493 byte). Sono misure di questo carico sintetico
+nell'ambiente di sviluppo, non una stima dei tempi di un sito in produzione.
+
+In SSMS eseguire `database/performance-check.sql` per letture logiche, tempi e
+dimensioni degli indici; attivare il piano effettivo con **Ctrl+M**. Il benchmark
+`tests/slots-benchmark.sql` crea record sintetici e li annulla con rollback: usarlo
+soltanto in un database di sviluppo. Non vengono cancellati dati storici né eseguiti
+rebuild generalizzati o svuotamenti delle cache SQL.

@@ -38,3 +38,6 @@ public sealed record AppointmentCreatedResult(int Id, string Status);
 public sealed record StockResult(int Id, int StockQuantity);
 
 public sealed record SlotResult(DateTime StartsAt, DateTime EndsAt, int DurationMinutes);
+
+public sealed record ReferenceItem(int Id, string Name);
+public sealed record ReferenceDataResult(List<ReferenceItem> Specialties, List<ReferenceItem> Locations, List<DoctorResult> Doctors);

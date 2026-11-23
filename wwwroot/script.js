@@ -11,9 +11,13 @@ const slotMessage = document.querySelector('#slotMessage');
 let calendarVersion = 0;
 let doctorVersion = 0;
 let doctors = [];
+let slotsController;
+let servicesController;
+const clinicDayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' });
+const clinicTimeFormat = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
 
 function clinicDate() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  return clinicDayFormat.format(new Date());
 }
 
 function clearSlots(message = 'Scegli medico e giorno') {
@@ -23,41 +27,45 @@ function clearSlots(message = 'Scegli medico e giorno') {
 
 async function loadSlots() {
   const version = ++calendarVersion;
+  slotsController?.abort();
+  slotsController = new AbortController();
   clearSlots();
   if (!doctorSelect.value || !bookingDate.value || !bookingDate.checkValidity()) return;
   clearSlots('Caricamento disponibilità…');
   try {
     const query = new URLSearchParams({ date: bookingDate.value });
     if (serviceSelect.value) query.set('medicalServiceId', serviceSelect.value);
-    const slots = await apiRequest(`/api/doctors/${doctorSelect.value}/slots?${query}`);
+    const slots = await apiRequest(`/api/doctors/${doctorSelect.value}/slots?${query}`, { signal: slotsController.signal });
     if (version !== calendarVersion) return;
-    const time = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
     slotSelect.replaceChildren(new Option(slots.length ? 'Seleziona un orario' : 'Nessun orario disponibile', ''));
     slots.forEach((slot) => slotSelect.add(new Option(
-      `${time.format(new Date(slot.startsAt))} – ${time.format(new Date(slot.endsAt))} (${slot.durationMinutes} min)`, slot.startsAt)));
+      `${clinicTimeFormat.format(new Date(slot.startsAt))} – ${clinicTimeFormat.format(new Date(slot.endsAt))} (${slot.durationMinutes} min)`, slot.startsAt)));
     slotMessage.textContent = slots.length ? 'Orari della clinica (Roma). La disponibilità viene ricontrollata alla conferma.'
       : 'Nessuna disponibilità per questo giorno. Prova un’altra data o prestazione.';
   } catch (error) {
-    if (version !== calendarVersion) return;
+    if (error.name === 'AbortError' || version !== calendarVersion) return;
     clearSlots('Disponibilità non caricata. Cambia giorno per riprovare.');
   }
 }
 
 async function doctorChanged() {
   ++calendarVersion;
+  slotsController?.abort();
+  servicesController?.abort();
+  servicesController = new AbortController();
   const version = ++doctorVersion;
   serviceSelect.replaceChildren(new Option('Visita standard del turno', ''));
   serviceSelect.disabled = true;
   clearSlots();
   try {
     if (doctorSelect.value) {
-      const services = await apiRequest(`/api/medical-services?active=true&doctorId=${doctorSelect.value}`);
+      const services = await apiRequest(`/api/medical-services?active=true&doctorId=${doctorSelect.value}`, { signal: servicesController.signal });
       if (version !== doctorVersion) return;
       services.forEach((service) => serviceSelect.add(new Option(`${service.name} (${service.durationMinutes} min)`, service.id)));
     }
     if (version === doctorVersion) await loadSlots();
   } catch (error) {
-    if (version === doctorVersion) clearSlots('Prestazioni non caricate. Seleziona nuovamente il medico.');
+    if (error.name !== 'AbortError' && version === doctorVersion) clearSlots('Prestazioni non caricate. Seleziona nuovamente il medico.');
   } finally {
     if (doctorSelect.value && version === doctorVersion) serviceSelect.disabled = false;
   }
@@ -72,7 +80,7 @@ serviceSelect.addEventListener('change', loadSlots);
 async function apiRequest(url, options = {}) {
   const response = await fetch(url, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
   });
 
   if (response.ok) return response.status === 204 ? null : response.json();
@@ -125,11 +133,7 @@ function renderDoctors(items) {
 
 async function loadReferenceData() {
   try {
-    const [specialties, locations, loadedDoctors] = await Promise.all([
-      apiRequest('/api/specialties'),
-      apiRequest('/api/locations'),
-      apiRequest('/api/doctors'),
-    ]);
+    const { specialties, locations, doctors: loadedDoctors } = await apiRequest('/api/reference-data');
     doctors = loadedDoctors;
     fillSelect(specialtySelect, specialties, 'Tutte le specialità');
     fillSelect(locationSelect, locations, 'Tutte le sedi');
@@ -165,6 +169,8 @@ dialog.addEventListener('click', (event) => {
 dialog.addEventListener('close', () => {
   calendarVersion++;
   doctorVersion++;
+  slotsController?.abort();
+  servicesController?.abort();
   clearSlots();
   serviceSelect.replaceChildren(new Option('Visita standard del turno', ''));
   form.reset();

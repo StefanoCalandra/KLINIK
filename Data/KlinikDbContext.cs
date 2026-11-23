@@ -47,7 +47,8 @@ public sealed class KlinikDbContext(DbContextOptions<KlinikDbContext> options) :
             .OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Appointment>()
             .HasIndex(item => new { item.DoctorId, item.AppointmentDate })
-            .IsUnique().HasFilter("[Status] <> N'Annullata'");
+            .IsUnique().HasFilter("[Status] <> N'Annullata'")
+            .IncludeProperties(item => item.DurationMinutes);
         modelBuilder.Entity<Appointment>().Property(item => item.AppointmentDate)
             .HasConversion(value => value, value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
         modelBuilder.Entity<Appointment>().Property(item => item.CreatedAt)

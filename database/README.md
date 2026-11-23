@@ -9,8 +9,8 @@ in **Database → KlinikDb** dopo un aggiornamento dell'albero.
 Non eseguire lo script dopo che l'applicazione ha già creato e popolato il database.
 
 `stored-procedures.sql` contiene le procedure e gli indici usati dal backend.
-Viene copiato nell'output ed eseguito automaticamente a ogni avvio con istruzioni
-idempotenti `CREATE OR ALTER`; può anche essere eseguito manualmente da SSMS.
+Viene copiato nell'output e applicato automaticamente quando cambia il contenuto,
+con istruzioni idempotenti `CREATE OR ALTER`; può anche essere eseguito manualmente da SSMS.
 
 `expansion.sql` aggiunge prestazioni mediche, associazioni medico-prestazione,
 turni settimanali, ulteriori specialisti e un catalogo farmaceutico ampio. È idempotente e viene
@@ -70,3 +70,26 @@ Come le altre API amministrative della demo, le nuove API delle assenze richiedo
 l'aggiunta di autenticazione e autorizzazione prima dell'uso pubblico.
 
 Per le regressioni SQL dirette: `sqlcmd -b -d <database-di-sviluppo> -i tests/stored-procedures.sql`.
+
+## Avvio e misurazione delle prestazioni
+
+`dbo.KlinikScriptVersions` registra hash e data di applicazione degli script.
+Un riavvio senza modifiche non ripete seed e DDL; i dati dimostrativi eliminati
+non vengono reinseriti a ogni avvio. Per riapplicare intenzionalmente gli script
+usare `Database:ReapplyScripts=true` (variabile `Database__ReapplyScripts=true`)
+per un avvio, poi rimuovere l'impostazione. Questa opzione può reinserire dati
+seed mancanti; non serve dopo una normale modifica ai file SQL, rilevata automaticamente.
+Le modifiche manuali alle procedure in SSMS non cambiano gli hash dei file:
+usare la riapplicazione esplicita per riallinearle ai sorgenti.
+
+`database/performance-check.sql` è diagnostica in sola lettura, senza `USE`:
+selezionare il database desiderato in SSMS. Le DMV sulle dimensioni degli indici
+possono richiedere autorizzazioni di visualizzazione dello stato del database.
+`tests/slots-benchmark.sql` è riservato allo sviluppo: crea 100.000 righe in una
+transazione, misura dieci ricerche e annulla tutto. Durante l'esecuzione può
+bloccare altre richieste. Non usarlo sul database operativo.
+
+Il piano degli slot può ora effettuare seek per medico e intervallo temporale
+sull'indice univoco filtrato, che include `DurationMinutes`. Il limite inferiore
+è corretto grazie a `CK_Appointments_Duration` (durata massima 480 minuti):
+se si aumenta questo limite occorre aggiornare anche la funzione SQL.
