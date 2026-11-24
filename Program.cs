@@ -53,6 +53,7 @@ app.UseStaticFiles();
 // Espone le operazioni CRUD per specialità, sedi, medici, appuntamenti e
 // prodotti. I dati vengono letti e modificati direttamente su SQL Server.
 app.MapClinicEndpoints();
+app.MapAdminEndpoints();
 
 // Un indirizzo API sconosciuto non deve restituire HTML con stato 200.
 app.MapFallback("/api/{**path}", () => Results.NotFound());
