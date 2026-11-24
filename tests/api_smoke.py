@@ -116,6 +116,63 @@ class ApiTests(unittest.TestCase):
             'appointmentDate': overlap.isoformat()})[0], 409)
         self.create('/api/appointments', {**payload, 'medicalServiceId': None, 'appointmentDate': remaining[0]['startsAt']})
 
+    def test_admin_agenda_filters_pagination_and_details(self):
+        from zoneinfo import ZoneInfo
+        doctor, _, location = self.doctor()
+        self.assertEqual(request(f'/api/locations/{location}', 'PUT', {'name': 'Admin ' + self.suffix,
+            'address': 'Via Test 12', 'city': 'Milano'})[0], 204)
+        slots = self.slots(doctor)
+        payload = {**self.booking(doctor), 'patientName': 'Admin ' + self.suffix,
+            'email': 'admin-test@example.test', 'notes': '<script>test</script>'}
+        first = self.create('/api/appointments', payload)
+        second = self.create('/api/appointments', {**payload, 'appointmentDate': slots[1]['startsAt']})
+        day = dt.datetime.fromisoformat(slots[0]['startsAt']).astimezone(ZoneInfo('Europe/Rome')).date().isoformat()
+        query = {'from': day, 'to': day, 'doctorId': doctor, 'locationId': location, 'pageSize': 1}
+        def agenda(**filters):
+            return request('/api/admin/appointments?' + urllib.parse.urlencode({**query, **filters}))
+        code, data = agenda()
+        self.assertEqual(code, 200, data)
+        self.assertEqual(data['total'], 2)
+        self.assertEqual(data['summary']['pending'], 2)
+        self.assertEqual(data['items'][0]['id'], first)
+        item = data['items'][0]
+        self.assertEqual(item['medicalService'], 'Visita standard')
+        self.assertEqual(item['address'], 'Via Test 12')
+        self.assertEqual(item['city'], 'Milano')
+        self.assertEqual(item['email'], payload['email'])
+        self.assertEqual(item['notes'], payload['notes'])
+        self.assertTrue(item['appointmentDate'].endswith('Z'))
+        self.assertEqual(agenda(page=2)[1]['items'][0]['id'], second)
+        self.assertEqual(agenda(page=3)[1]['items'], [])
+        self.assertEqual(agenda(locationId=2147483647)[1]['total'], 0)
+        self.assertEqual(agenda(search=f'AUR-{first:06d}')[1]['total'], 1)
+        self.assertEqual(request(f'/api/appointments/{first}/status', 'PUT', {'status': 'Confermata'})[0], 204)
+        self.assertEqual(agenda(status='Confermata')[1]['items'][0]['id'], first)
+        self.assertEqual(agenda(status='Confermata')[1]['summary']['confirmed'], 1)
+        self.assertEqual(request(f'/api/appointments/{first}/cancel', 'POST')[0], 204)
+        self.assertEqual(agenda(status='Annullata')[1]['items'][0]['id'], first)
+        for invalid in [{'page': 0}, {'pageSize': 0}, {'pageSize': 101}, {'page': 2147483647, 'pageSize': 100},
+                        {'status': 'invalid'}, {'doctorId': -1}, {'search': 'a'*121},
+                        {'from': '2026-01-01', 'to': '2027-01-02'}]:
+            self.assertEqual(agenda(**invalid)[0], 400, invalid)
+
+    def test_admin_dates_use_rome_midnight(self):
+        from zoneinfo import ZoneInfo
+        doctor, _, _ = self.doctor(with_schedule=False)
+        day = (dt.datetime.now(ZoneInfo('Europe/Rome')) + dt.timedelta(days=7)).date()
+        self.create('/api/doctor-schedules', {'doctorId': doctor, 'dayOfWeek': (day.weekday()+1)%7,
+            'startTime': '00:00:00', 'endTime': '02:00:00', 'slotDurationMinutes': 30, 'isActive': True})
+        slots = self.slots(doctor, day.isoformat())
+        appointment = self.create('/api/appointments', {'patientName': 'Midnight', 'phone': '000',
+            'doctorId': doctor, 'appointmentDate': slots[0]['startsAt']})
+        query = {'from': day.isoformat(), 'to': day.isoformat(), 'doctorId': doctor}
+        status, data = request('/api/admin/appointments?' + urllib.parse.urlencode(query))
+        self.assertEqual(status, 200)
+        self.assertEqual([x['id'] for x in data['items']], [appointment])
+        previous = (day-dt.timedelta(days=1)).isoformat()
+        query.update({'from': previous, 'to': previous})
+        self.assertEqual(request('/api/admin/appointments?' + urllib.parse.urlencode(query))[1]['total'], 0)
+
     def test_input_validation(self):
         cases = [('/api/specialties', {'name': None}),
                  ('/api/specialties', {'name': 'x' * 101}),

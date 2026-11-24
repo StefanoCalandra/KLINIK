@@ -6,10 +6,11 @@
   "scripts": {
     "start": "node server.mjs",
     "start:open": "node server.mjs --open",
-    "check": "node --check wwwroot/script.js && node --check server.mjs",
+    "check": "node --check wwwroot/script.js && node --check wwwroot/admin.js && node --check server.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:api": "python3 tests/api_smoke.py",
-    "test:browser": "node tests/browser-smoke.mjs"
+    "test:browser": "node tests/browser-smoke.mjs",
+    "test:admin": "node tests/admin-browser.mjs"
   },
   "engines": {
     "node": ">=18"

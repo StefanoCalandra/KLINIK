@@ -454,7 +454,7 @@ Attualmente:
 - il calendario propone slot reali da turni, prestazioni e assenze; il personale gestisce turni e assenze tramite API, senza un pannello amministrativo;
 - il form salva dati di contatto, ma non invia ancora email o promemoria;
 - la farmacia non contiene catalogo, carrello o pagamenti;
-- non esistono login, area paziente o area amministrativa;
+- è presente una pagina amministrativa demo per le visite; login e area paziente non sono ancora implementati;
 - SQL Server è configurato, mentre email, audit applicativo e monitoraggio non lo sono ancora;
 - il sito usa font di sistema per restare veloce e funzionare anche senza Internet.
 
@@ -619,3 +619,44 @@ dimensioni degli indici; attivare il piano effettivo con **Ctrl+M**. Il benchmar
 `tests/slots-benchmark.sql` crea record sintetici e li annulla con rollback: usarlo
 soltanto in un database di sviluppo. Non vengono cancellati dati storici né eseguiti
 rebuild generalizzati o svuotamenti delle cache SQL.
+
+## Pagina amministrativa delle visite
+
+Aprire `/admin.html` sul backend ASP.NET Core, oppure usare il collegamento
+**Area amministrazione** nel footer del sito. È una pagina separata dalla home,
+con propri file `wwwroot/admin.html`, `admin.css` e `admin.js`.
+
+L'agenda mostra paziente e telefono, data e intervallo orario, medico, prestazione,
+durata, sede con indirizzo/città e stato. Il pannello **Dettagli** aggiunge email,
+note, specialità, codice della prenotazione e data di registrazione. Sono presenti
+ricerca per paziente/telefono/codice, filtri per periodo, medico, sede e stato,
+riepiloghi sul risultato completo dei filtri e pagine da 25, 50 o 100 visite.
+Il periodo iniziale comprende oggi e i sei giorni successivi, nel fuso di Roma.
+
+I pulsanti permettono di confermare e annullare una visita; il dettaglio consente
+anche di assegnare gli altri stati supportati. L'annullamento richiede conferma,
+conserva lo storico e libera l'intervallo. Una visita completata non viene
+annullata dal comando di cancellazione. La riattivazione di una visita annullata
+resta soggetta al controllo di disponibilità del backend. Non vengono eliminati
+appuntamenti dal pannello.
+
+`GET /api/admin/appointments?from=2026-11-24&to=2026-11-30&page=1&pageSize=25`
+restituisce `items`, `total`, `page`, `pageSize` e `summary`. Parametri opzionali:
+`doctorId`, `locationId`, `status` e `search` (fino a 120 caratteri). Le date del
+filtro sono inclusive e riferite a Roma; i timestamp JSON sono UTC. Il periodo
+massimo è di 366 giorni, negli anni 2000–2099. Filtri, aggregati e paginazione sono
+eseguiti nel database, senza scaricare tutto lo storico. I risultati inviano
+`Cache-Control: no-store`. Medico, prestazione e sede visualizzati usano i dati
+correnti dei rispettivi record collegati, non uno storico delle loro modifiche.
+
+La pagina mantiene il modello di accesso della demo: **non introduce login o
+ruoli**. Anche la lettura delle visite e le API di modifica esistenti sono prive
+di autenticazione. Non costituisce quindi un'area riservata protetta.
+Il server Node alternativo pubblica la grafica, ma per usare l'agenda serve .NET
+con SQL Server, come per la prenotazione pubblica.
+
+Verifiche: `npm run test:api` include filtri, dati di sede/contatto, paginazione e
+mezzanotte di Roma. `npm run test:admin` usa Chromium/Playwright Core come
+`test:browser`: verifica 26 appuntamenti, due pagine, dettagli, conferma e
+annullamento, errori/riprova, layout mobile e i fusi Europe/Rome e America/New_York.
+I record sintetici sono rimossi al termine.
