@@ -660,3 +660,39 @@ mezzanotte di Roma. `npm run test:admin` usa Chromium/Playwright Core come
 `test:browser`: verifica 26 appuntamenti, due pagine, dettagli, conferma e
 annullamento, errori/riprova, layout mobile e i fusi Europe/Rome e America/New_York.
 I record sintetici sono rimossi al termine.
+
+### Medici e orari non compaiono nel modulo
+
+Il caricamento del database è ora esplicito: aprire il modulo mentre i dati sono
+in arrivo non lascia più un menu vuoto utilizzabile. In caso di errore usare
+**Riprova caricamento**: il nome, il telefono e le note già inseriti restano nel
+modulo. Se l'endpoint aggregato non è ancora aggiornato, il frontend prova gli
+endpoint compatibili di specialità, sedi e medici.
+
+Quando specialità e sede non corrispondono ad alcun medico prenotabile, il modulo
+lo segnala e propone **Mostra tutti i medici**. I medici non disponibili nel
+database non vengono attivati automaticamente e non vengono usati elenchi fittizi.
+
+Se il giorno scelto non ha turni, premere **Cerca il primo orario disponibile**:
+il server cerca nei successivi 28 giorni, rispettando turni, prestazioni, assenze
+e prenotazioni già esistenti. Il giorno e lo slot trovati vengono selezionati nel
+modulo. Per esempio un sabato senza turno può proporre il lunedì successivo;
+non vengono aggiunti turni artificiali al database.
+
+In Visual Studio arrestare il debug, ricompilare e riavviare con F5/Ctrl+F5 dopo
+l'aggiornamento del progetto. Il primo avvio aggiorna le procedure SQL, inclusa
+`usp_Doctor_GetNextSlot`. L'inizializzatore ripara anche procedure richieste mancanti
+se gli hash dei file risultano già installati. Gli URL JavaScript/CSS sono stati
+aggiornati per evitare di riutilizzare nel browser la vecchia versione del modulo.
+
+Dopo l'invio, il codice `AUR-…` viene mostrato soltanto dopo la risposta di successo
+del salvataggio SQL, insieme a medico, sede e data/ora. Per verificare il record
+aprire **Area amministrazione**, impostare Dal/Al in modo da includere il giorno
+prenotato e cercare il codice. Il periodo iniziale dell'admin include solo oggi e
+i sei giorni successivi: una visita più lontana richiede di cambiare il periodo.
+In SSMS il record è nella tabella `dbo.Appointments` del database indicato dalla
+connessione dell'applicazione; `AppointmentDate` è memorizzata in UTC.
+
+`npm run test:booking` verifica caricamento lento, recupero da errori e endpoint
+aggregato mancante, filtri senza medici, ricerca dal sabato al lunedì, invio reale
+al database di sviluppo e comparsa dello stesso record nella pagina admin.

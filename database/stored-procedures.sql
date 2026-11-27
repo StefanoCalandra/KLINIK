@@ -80,6 +80,35 @@ BEGIN
 END;
 GO
 
+-- Ricerca limitata: non inventa turni nei giorni di chiusura.
+CREATE OR ALTER PROCEDURE dbo.usp_Doctor_GetNextSlot
+    @DoctorId int, @From date, @MedicalServiceId int=NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF @From IS NULL OR @From<'20000101' OR @From>'20991231'
+        THROW 50010, 'Data calendario non valida (2000-2099).', 1;
+    DECLARE @Today date=CONVERT(date,SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'W. Europe Standard Time');
+    IF @From<@Today SET @From=@Today;
+    DECLARE @Day int=0;
+    DECLARE @Next TABLE (StartsAt datetime2,EndsAt datetime2,DurationMinutes int);
+    WHILE @Day<28 AND @From<='20991231'
+    BEGIN
+        INSERT @Next SELECT TOP (1) StartsAt,EndsAt,DurationMinutes
+        FROM dbo.ufn_DoctorSlots(@DoctorId,@From,@MedicalServiceId,NULL,NULL)
+        ORDER BY StartsAt,DurationMinutes;
+        IF @@ROWCOUNT>0
+        BEGIN
+            SELECT StartsAt,EndsAt,DurationMinutes FROM @Next;
+            RETURN;
+        END;
+        SET @From=DATEADD(day,1,@From);
+        SET @Day+=1;
+    END;
+    SELECT StartsAt,EndsAt,DurationMinutes FROM @Next;
+END;
+GO
+
 CREATE OR ALTER PROCEDURE dbo.usp_Appointment_Save
     @PatientName nvarchar(120), @Phone nvarchar(30), @Email nvarchar(150)=NULL,
     @AppointmentDate datetime2, @DoctorId int, @Notes nvarchar(1000)=NULL,

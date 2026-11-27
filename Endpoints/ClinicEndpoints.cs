@@ -34,6 +34,14 @@ public static class ClinicEndpoints
             if (!await db.Doctors.AnyAsync(x => x.Id == id, cancellationToken)) return Results.NotFound();
             return Results.Ok(await procedures.GetSlotsAsync(id, date, medicalServiceId, cancellationToken));
         });
+        api.MapGet("/doctors/{id:int}/next-slot", async (int id, DateOnly from, int? medicalServiceId,
+            KlinikDbContext db, ClinicStoredProcedures procedures, CancellationToken cancellationToken) =>
+        {
+            if (from.Year is < 2000 or > 2099) return Validation("La data deve essere compresa tra 2000 e 2099.");
+            if (!await db.Doctors.AnyAsync(x => x.Id == id, cancellationToken)) return Results.NotFound();
+            var slot = await procedures.GetNextSlotAsync(id, from, medicalServiceId, cancellationToken);
+            return slot is null ? Results.NoContent() : Results.Ok(slot);
+        });
         var absences = api.MapGroup("/doctor-absences");
         absences.MapGet("/", async (int doctorId, KlinikDbContext db, CancellationToken cancellationToken) =>
             await db.DoctorAbsences.AsNoTracking().Where(x => x.DoctorId == doctorId).OrderBy(x => x.StartsAt)
