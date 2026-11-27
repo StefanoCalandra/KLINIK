@@ -212,6 +212,33 @@ class ApiTests(unittest.TestCase):
             'specialtyId': specialty, 'locationId': location})[0], 204)
         self.assertEqual(request(f'/api/doctors/{doctor}/next-slot?from={start}')[0], 204)
 
+    def test_admin_default_includes_requests_outside_current_week(self):
+        from zoneinfo import ZoneInfo
+        doctor, _, _ = self.doctor()
+        today = dt.datetime.now(ZoneInfo('Europe/Rome')).date()
+        ids = []
+        for days in [14, 35]:
+            day = (today+dt.timedelta(days=days)).isoformat()
+            slot = self.slots(doctor, day)[0]
+            ids.append(self.create('/api/appointments', {'patientName': 'Beyond week ' + self.suffix,
+                'phone': '000', 'doctorId': doctor, 'appointmentDate': slot['startsAt']}))
+        def agenda(**filters):
+            return request('/api/admin/appointments?' + urllib.parse.urlencode({'doctorId': doctor, **filters}))
+        status, data = agenda()
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data['total'], 2)
+        self.assertEqual(data['summary']['pending'], 2)
+        self.assertEqual([x['id'] for x in data['items']], list(reversed(ids)))
+        self.assertEqual(agenda(**{'from': str(today), 'to': str(today+dt.timedelta(days=6))})[1]['total'], 0)
+        self.assertEqual(agenda(status='In attesa')[1]['total'], 2)
+        self.assertEqual(agenda(search=f'AUR-{ids[1]:06d}')[1]['items'][0]['id'], ids[1])
+        self.assertEqual(agenda(**{'from': str(today+dt.timedelta(days=20))})[1]['total'], 1)
+        self.assertEqual(agenda(to=str(today+dt.timedelta(days=20)))[1]['total'], 1)
+        page = agenda(pageSize=1)[1]
+        self.assertEqual(page['total'], 2)
+        self.assertEqual(len(page['items']), 1)
+        self.assertEqual(agenda(pageSize=1, page=2)[1]['items'][0]['id'], ids[0])
+
     def test_input_validation(self):
         cases = [('/api/specialties', {'name': None}),
                  ('/api/specialties', {'name': 'x' * 101}),

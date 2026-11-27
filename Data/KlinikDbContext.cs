@@ -52,6 +52,8 @@ public sealed class KlinikDbContext(DbContextOptions<KlinikDbContext> options) :
             .HasIndex(item => new { item.DoctorId, item.AppointmentDate })
             .IsUnique().HasFilter("[Status] <> N'Annullata'")
             .IncludeProperties(item => item.DurationMinutes);
+        modelBuilder.Entity<Appointment>().HasIndex(item => new { item.CreatedAt, item.Id })
+            .IsDescending(true, true).IncludeProperties(item => new { item.AppointmentDate, item.Status, item.DoctorId });
         modelBuilder.Entity<Appointment>().Property(item => item.AppointmentDate)
             .HasConversion(value => value, value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
         modelBuilder.Entity<Appointment>().Property(item => item.CreatedAt)

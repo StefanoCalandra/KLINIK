@@ -3,7 +3,6 @@ const filters = $('filters');
 const dialog = $('details');
 const dayFormat = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: 'short', year: 'numeric' });
 const timeFormat = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-const isoDayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' });
 const states = { 'In attesa': 'pending', Confermata: 'confirmed', Completata: 'completed', Annullata: 'cancelled', Assente: 'absent' };
 let currentPage = 1;
 let appliedFilters;
@@ -16,12 +15,19 @@ let csrfToken = null;
 let username = null;
 
 function defaults() {
-  const today = isoDayFormat.format(new Date());
-  $('from').value = today;
-  const end = new Date(`${today}T12:00:00Z`);
-  end.setUTCDate(end.getUTCDate() + 6);
-  $('to').value = end.toISOString().slice(0, 10);
+  $('from').value = '';
+  $('to').value = '';
 }
+function updateScope() {
+  const applied = new URLSearchParams(appliedFilters);
+  const from = applied.get('from'), to = applied.get('to');
+  $('totalLabel').textContent = from || to ? 'Visite nel periodo' : 'Richieste registrate';
+  $('filterScope').textContent = from || to
+    ? `Periodo visite: ${from ? dayFormat.format(new Date(`${from}T12:00:00Z`)) : 'qualsiasi data iniziale'} – ${to ? dayFormat.format(new Date(`${to}T12:00:00Z`)) : 'qualsiasi data finale'}.`
+    : 'Tutte le date · Richieste ordinate dalla più recente.';
+  $('allDates').hidden = !from && !to;
+}
+
 function message(id, text) {
   $(id).textContent = text;
   $(id).hidden = !text;
@@ -89,6 +95,9 @@ function render(items) {
   $('visits').replaceChildren(fragment);
   $('tableWrap').hidden = !items.length;
   $('empty').hidden = !!items.length;
+  $('empty').textContent = new URLSearchParams(appliedFilters).size
+    ? 'Nessuna visita corrisponde ai filtri selezionati. Usa Tutte le richieste in attesa per cercare senza limiti di data.'
+    : 'Non risultano richieste registrate. Se hai appena prenotato, verifica di aver ricevuto il codice di conferma AUR-… e aggiorna l’agenda.';
 }
 async function loadVisits() {
   const version = ++requestVersion;
@@ -112,6 +121,7 @@ async function loadVisits() {
       currentPage = lastPage;
       return await loadVisits();
     }
+    updateScope();
     render(data.items);
     for (const id of ['total', 'pending', 'confirmed', 'completed'])
       $(id).textContent = id === 'total' ? data.total : data.summary[id];
@@ -136,7 +146,7 @@ async function loadVisits() {
 }
 function applyFilters() {
   if (!filters.reportValidity()) return;
-  if ($('from').value > $('to').value) {
+  if ($('from').value && $('to').value && $('from').value > $('to').value) {
     message('error', 'La data finale deve essere uguale o successiva a quella iniziale.');
     return;
   }
@@ -194,6 +204,13 @@ async function changeStatus(visit, status) {
 filters.addEventListener('submit', (event) => { event.preventDefault(); applyFilters(); });
 $('reset').addEventListener('click', () => { filters.reset(); defaults(); applyFilters(); });
 $('refresh').addEventListener('click', () => loadVisits());
+$('allDates').addEventListener('click', () => { defaults(); applyFilters(); });
+$('showPending').addEventListener('click', () => {
+  filters.reset();
+  defaults();
+  $('status').value = 'In attesa';
+  applyFilters();
+});
 $('previous').addEventListener('click', () => { --currentPage; loadVisits(); });
 $('next').addEventListener('click', () => { ++currentPage; loadVisits(); });
 $('pageSize').addEventListener('change', () => { currentPage = 1; loadVisits(); });
