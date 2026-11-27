@@ -12,6 +12,8 @@ let requestVersion = 0;
 let visits = new Map();
 let selected;
 let saving = false;
+let csrfToken = null;
+let username = null;
 
 function defaults() {
   const today = isoDayFormat.format(new Date());
@@ -32,8 +34,12 @@ function period(visit) {
 }
 async function api(url, options = {}) {
   const response = await fetch(url, { cache: 'no-store', ...options,
-    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } });
+    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}), ...options.headers } });
   if (response.ok) return response.status === 204 ? null : response.json();
+  if (response.status === 401 && url !== '/api/admin/login') {
+    await initializeSession();
+    throw new Error('Sessione scaduta. Accedi nuovamente.');
+  }
   const problem = await response.json().catch(() => ({}));
   throw new Error((problem.errors && Object.values(problem.errors).flat().join(' '))
     || problem.detail || problem.message || 'Operazione non riuscita. Premi Aggiorna agenda per riprovare.');
@@ -199,7 +205,98 @@ async function loadReferences() {
   $('doctor').replaceChildren(new Option('Tutti i medici', ''), ...data.doctors.map((doctor) => new Option(doctor.fullName, doctor.id)));
   $('location').replaceChildren(new Option('Tutte le sedi', ''), ...data.locations.map((location) => new Option(location.name, location.id)));
 }
-defaults();
-appliedFilters = [...new FormData(filters)].filter(([, value]) => value !== '');
-loadReferences().catch(() => message('error', 'Filtri medico e sede non caricati. Ricarica la pagina per riprovare.'));
-loadVisits();
+function showLogin(text = '') {
+  ++requestVersion;
+  controller?.abort();
+  visits.clear();
+  selected = null;
+  $('visits').replaceChildren();
+  $('detailFields').replaceChildren();
+  $('detailTitle').textContent = 'Dettaglio visita';
+  $('detailCode').textContent = '';
+  filters.reset();
+  appliedFilters = null;
+  for (const id of ['total', 'pending', 'confirmed', 'completed']) $(id).textContent = '—';
+  $('currentUsername').textContent = '';
+  if (dialog.open) dialog.close();
+  if ($('credentialsDialog').open) $('credentialsDialog').close();
+  $('credentialsForm').reset();
+  $('adminMain').hidden = true;
+  $('accountActions').hidden = true;
+  $('loginMain').hidden = false;
+  $('loginPassword').value = '';
+  message('loginError', text);
+}
+async function initializeSession() {
+  try {
+    const session = await api('/api/admin/session');
+    csrfToken = session.csrfToken;
+    username = session.username;
+    $('loginSubmit').disabled = false;
+    $('retryLogin').hidden = true;
+    $('loginStatus').textContent = '';
+    if (!session.authenticated) { showLogin(); return; }
+    $('loginMain').hidden = true;
+    $('adminMain').hidden = false;
+    $('accountActions').hidden = false;
+    $('currentUsername').textContent = username;
+    if (!appliedFilters) {
+      defaults();
+      appliedFilters = [...new FormData(filters)].filter(([, value]) => value !== '');
+    }
+    await loadReferences();
+    await loadVisits();
+  } catch (error) {
+    showLogin('Impossibile collegarsi alla clinica. Verifica che il backend sia avviato e riprova.');
+    $('retryLogin').hidden = false;
+    $('loginStatus').textContent = '';
+  }
+}
+$('loginForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!$('loginForm').reportValidity() || !csrfToken) return;
+  $('loginSubmit').disabled = true;
+  message('loginError', '');
+  try {
+    await api('/api/admin/login', { method: 'POST', body: JSON.stringify({
+      username: $('loginUsername').value, password: $('loginPassword').value,
+    }) });
+    $('loginPassword').value = '';
+    await initializeSession();
+  } catch {
+    message('loginError', 'Accesso non riuscito. Verifica username e password, poi riprova.');
+  } finally { $('loginSubmit').disabled = false; }
+});
+$('retryLogin').addEventListener('click', initializeSession);
+$('logout').addEventListener('click', async () => {
+  try {
+    await api('/api/admin/logout', { method: 'POST' });
+    appliedFilters = null;
+    await initializeSession();
+    $('loginUsername').focus();
+  } catch (error) { message('error', error.message); }
+});
+$('openCredentials').addEventListener('click', () => {
+  $('credentialsForm').reset();
+  $('newUsername').value = username;
+  message('credentialsError', '');
+  $('credentialsDialog').showModal();
+});
+$('closeCredentials').addEventListener('click', () => $('credentialsDialog').close());
+$('credentialsDialog').addEventListener('close', () => $('credentialsForm').reset());
+$('credentialsForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!$('credentialsForm').reportValidity()) return;
+  if ($('newPassword').value !== $('confirmPassword').value) {
+    message('credentialsError', 'Le nuove password non coincidono.'); return;
+  }
+  $('saveCredentials').disabled = true;
+  try {
+    await api('/api/admin/credentials', { method: 'PUT', body: JSON.stringify(Object.fromEntries(new FormData($('credentialsForm')))) });
+    $('credentialsDialog').close();
+    await initializeSession();
+    message('notice', 'Credenziali aggiornate. Le altre sessioni sono state disconnesse.');
+  } catch (error) { message('credentialsError', error.message); }
+  finally { $('saveCredentials').disabled = false; }
+});
+initializeSession();

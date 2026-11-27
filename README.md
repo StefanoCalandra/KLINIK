@@ -365,7 +365,7 @@ Invoke-RestMethod `
   -Body $prodotto
 ```
 
-Il sito usa già queste API per caricare specialità, sedi e medici e per registrare una prenotazione. Per ragioni di sicurezza, prima di esporre il sito su Internet bisogna proteggere POST, PUT, DELETE e la lettura degli appuntamenti con autenticazione e ruoli amministrativi.
+Il sito usa già queste API per caricare specialità, sedi e medici e per registrare una prenotazione. Per ragioni di sicurezza, le modifiche e la lettura degli appuntamenti richiedono ora il login amministrativo; la creazione pubblica delle prenotazioni resta accessibile senza login.
 
 ### Stored procedure utilizzate dal sito
 
@@ -454,7 +454,7 @@ Attualmente:
 - il calendario propone slot reali da turni, prestazioni e assenze; il personale gestisce turni e assenze tramite API, senza un pannello amministrativo;
 - il form salva dati di contatto, ma non invia ancora email o promemoria;
 - la farmacia non contiene catalogo, carrello o pagamenti;
-- è presente una pagina amministrativa demo per le visite; login e area paziente non sono ancora implementati;
+- è presente una pagina amministrativa demo per le visite; il login amministrativo è presente; l’area paziente non è ancora implementata;
 - SQL Server è configurato, mentre email, audit applicativo e monitoraggio non lo sono ancora;
 - il sito usa font di sistema per restare veloce e funzionare anche senza Internet.
 
@@ -623,7 +623,7 @@ rebuild generalizzati o svuotamenti delle cache SQL.
 ## Pagina amministrativa delle visite
 
 Aprire `/admin.html` sul backend ASP.NET Core, oppure usare il collegamento
-**Area amministrazione** nel footer del sito. È una pagina separata dalla home,
+**Area amministrazione** in alto nella pagina. È una pagina separata dalla home,
 con propri file `wwwroot/admin.html`, `admin.css` e `admin.js`.
 
 L'agenda mostra paziente e telefono, data e intervallo orario, medico, prestazione,
@@ -649,9 +649,8 @@ eseguiti nel database, senza scaricare tutto lo storico. I risultati inviano
 `Cache-Control: no-store`. Medico, prestazione e sede visualizzati usano i dati
 correnti dei rispettivi record collegati, non uno storico delle loro modifiche.
 
-La pagina mantiene il modello di accesso della demo: **non introduce login o
-ruoli**. Anche la lettura delle visite e le API di modifica esistenti sono prive
-di autenticazione. Non costituisce quindi un'area riservata protetta.
+La pagina richiede ora il login amministrativo; lettura delle visite e API di
+modifica sono protette anche sul server. Vedere le istruzioni di accesso qui sotto.
 Il server Node alternativo pubblica la grafica, ma per usare l'agenda serve .NET
 con SQL Server, come per la prenotazione pubblica.
 
@@ -696,3 +695,46 @@ connessione dell'applicazione; `AppointmentDate` è memorizzata in UTC.
 `npm run test:booking` verifica caricamento lento, recupero da errori e endpoint
 aggregato mancante, filtri senza medici, ricerca dal sabato al lunedì, invio reale
 al database di sviluppo e comparsa dello stesso record nella pagina admin.
+
+## Accesso amministrativo e credenziali
+
+Il pulsante arancione **Area amministrazione**, in cima alla home e visibile anche
+su telefono, apre la pagina di login. Al primo avvio dell'aggiornamento:
+
+- **Username:** `admin`
+- **Password:** `admin`
+
+Dopo l'accesso, usare **Credenziali** nella barra superiore dell'agenda per
+modificare username e password. Sono richieste la password attuale e la conferma
+della nuova password. Non ci sono impostazioni di username/password nel frontend
+o in `appsettings.json`: nell'applicazione la modifica avviene solo da questa
+funzione autenticata. Le credenziali sono salvate nel database, con password
+hashata tramite il password hasher di ASP.NET Core (PBKDF2 e salt casuale).
+Il riavvio non ripristina `admin/admin`: il valore iniziale è creato soltanto
+quando l'account non esiste. Le altre sessioni vengono invalidate dopo una modifica.
+Il pulsante **Esci** termina la sessione del browser corrente.
+
+Le sessioni usano cookie HttpOnly/SameSite Strict, con scadenza massima di otto
+ore e flag Secure sulle connessioni HTTPS. Le operazioni amministrative e il login
+richiedono un token antiforgery. `GET /api/admin/session` restituisce stato della
+sessione e token; il client lo invia nell'header `X-CSRF-TOKEN`. Le API protette
+restituiscono `401` senza accesso, senza reindirizzare a HTML. La prenotazione
+pubblica (`POST /api/appointments`) e le letture di medici, sedi, specialità,
+prestazioni e slot restano accessibili ai visitatori. Lettura delle visite,
+assenze e modifiche CRUD richiedono l'accesso. Il login è limitato per indirizzo
+IP per contenere tentativi ripetuti.
+
+L'avvio applica automaticamente `database/admin-schema.sql`, anche a database
+esistenti, e inizializza l'account. Per installazioni manuali eseguire lo script
+nel database selezionato; il backend genera poi l'hash iniziale al suo avvio.
+Le chiavi di protezione dei cookie sono nella cartella privata
+`App_Data/DataProtectionKeys`, fuori da `wwwroot`, esclusa da Git e dalla
+pubblicazione dei sorgenti. Mantenerla nella stessa installazione per conservare
+le sessioni dopo il riavvio.
+
+`npm run test:auth` verifica autorizzazioni, token, login errato/corretto,
+logout, cambio credenziali e revoca delle altre sessioni; `npm run test:login`
+verifica questi flussi dall'interfaccia e la visibilità del pulsante fino a 320px.
+I test richiedono un database di sviluppo e ripristinano le credenziali iniziali
+al termine. Per test su credenziali già personalizzate usare
+`KLINIK_ADMIN_USERNAME` e `KLINIK_ADMIN_PASSWORD` nell'ambiente dei test.

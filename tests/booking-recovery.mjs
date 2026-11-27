@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { authenticateContext } from './admin-auth.mjs';
 import { chromium } from 'playwright-core';
 const base = process.env.KLINIK_API_URL ?? 'http://127.0.0.1:5043';
 const browser = await chromium.launch({ executablePath: process.env.BROWSER_EXECUTABLE ?? '/usr/bin/chromium', headless: true });
 const setup = await browser.newContext();
+await authenticateContext(setup, base);
 const cleanup = [];
 async function create(path, data) {
   const response = await setup.request.post(base + path, { data });
@@ -60,6 +62,7 @@ try {
   const stored = await (await setup.request.get(`${base}/api/appointments/${id}`)).json();
   assert.equal(stored.doctorId, doctorId);
   assert.equal(stored.patientName, 'Booking Recovery Test');
+  await authenticateContext(context, base);
   const admin = await context.newPage();
   await admin.goto(`${base}/admin.html`);
   await admin.locator('#from').fill(monday);

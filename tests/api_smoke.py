@@ -3,6 +3,7 @@
 Run: KLINIK_API_URL=http://127.0.0.1:5043 python3 tests/api_smoke.py
 Only records created by this run are removed during cleanup.
 """
+import http.cookiejar
 import concurrent.futures
 import datetime as dt
 import json
@@ -13,15 +14,17 @@ import urllib.parse
 import urllib.request
 import uuid
 
+CSRF_TOKEN = None
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 BASE = os.environ.get('KLINIK_API_URL', 'http://127.0.0.1:5043').rstrip('/')
 
 
 def request(path, method='GET', payload=None):
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(BASE + path, data=data, method=method,
-                                 headers={'Content-Type': 'application/json'})
+                                 headers={'Content-Type': 'application/json', **({'X-CSRF-TOKEN': CSRF_TOKEN} if CSRF_TOKEN else {})})
     try:
-        response = urllib.request.urlopen(req, timeout=30)
+        response = opener.open(req, timeout=30)
     except urllib.error.HTTPError as error:
         response = error
     with response:
@@ -31,6 +34,17 @@ def request(path, method='GET', payload=None):
 
 
 class ApiTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        global CSRF_TOKEN
+        CSRF_TOKEN = request('/api/admin/session')[1]['csrfToken']
+        status, body = request('/api/admin/login', 'POST', {
+            'username': os.environ.get('KLINIK_ADMIN_USERNAME', 'admin'),
+            'password': os.environ.get('KLINIK_ADMIN_PASSWORD', 'admin')})
+        if status != 200:
+            raise RuntimeError('Accesso amministrativo al database di test non riuscito.')
+        CSRF_TOKEN = request('/api/admin/session')[1]['csrfToken']
+
     def setUp(self):
         self.suffix = uuid.uuid4().hex[:12]
 

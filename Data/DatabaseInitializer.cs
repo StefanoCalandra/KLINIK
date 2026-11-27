@@ -42,13 +42,14 @@ public static class DatabaseInitializer
         }
 
         await ApplySqlScriptsAsync(db, reapplyScripts);
+        await ClinicaAurora.Services.AdminSecurity.EnsureAccountAsync(db);
     }
 
     private static async Task ApplySqlScriptsAsync(KlinikDbContext db, bool reapplyScripts)
     {
         // Leggere e validare tutti i file prima di aprire la transazione SQL.
         var scripts = new List<(string Name, string Text, string Hash)>();
-        foreach (var name in new[] { "expansion.sql", "calendar-schema.sql", "stored-procedures.sql" })
+        foreach (var name in new[] { "expansion.sql", "calendar-schema.sql", "admin-schema.sql", "stored-procedures.sql" })
         {
             var path = Path.Combine(AppContext.BaseDirectory, "database", name);
             var text = await File.ReadAllTextAsync(path);
