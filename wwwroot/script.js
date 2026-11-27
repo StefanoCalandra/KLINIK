@@ -11,6 +11,15 @@ const slotMessage = document.querySelector('#slotMessage');
 let calendarVersion = 0;
 let doctorVersion = 0;
 let doctors = [];
+let referenceState = 'loading';
+let referencePromise;
+let bookingFilters = { specialtyId: 0, locationId: 0 };
+let bookingSession = 0;
+let submitting = false;
+const dataStatus = document.querySelector('#bookingDataStatus');
+const retryData = document.querySelector('#retryBookingData');
+const showAllDoctors = document.querySelector('#showAllDoctors');
+const nextAvailable = document.querySelector('#nextAvailable');
 let slotsController;
 let servicesController;
 const clinicDayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -23,6 +32,7 @@ function clinicDate() {
 function clearSlots(message = 'Scegli medico e giorno') {
   slotSelect.replaceChildren(new Option(message, ''));
   slotMessage.textContent = message;
+  nextAvailable.hidden = true;
 }
 
 async function loadSlots() {
@@ -37,6 +47,7 @@ async function loadSlots() {
     if (serviceSelect.value) query.set('medicalServiceId', serviceSelect.value);
     const slots = await apiRequest(`/api/doctors/${doctorSelect.value}/slots?${query}`, { signal: slotsController.signal });
     if (version !== calendarVersion) return;
+    nextAvailable.hidden = slots.length > 0;
     slotSelect.replaceChildren(new Option(slots.length ? 'Seleziona un orario' : 'Nessun orario disponibile', ''));
     slots.forEach((slot) => slotSelect.add(new Option(
       `${clinicTimeFormat.format(new Date(slot.startsAt))} – ${clinicTimeFormat.format(new Date(slot.endsAt))} (${slot.durationMinutes} min)`, slot.startsAt)));
@@ -44,7 +55,8 @@ async function loadSlots() {
       : 'Nessuna disponibilità per questo giorno. Prova un’altra data o prestazione.';
   } catch (error) {
     if (error.name === 'AbortError' || version !== calendarVersion) return;
-    clearSlots('Disponibilità non caricata. Cambia giorno per riprovare.');
+    clearSlots('Orari non caricati. Premi Riprova caricamento per riprovare.');
+    retryData.hidden = false;
   }
 }
 
@@ -83,11 +95,13 @@ async function apiRequest(url, options = {}) {
     headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
   });
 
-  if (response.ok) return response.status === 204 ? null : response.json();
-
-  const problem = await response.json().catch(() => ({}));
-  const validationText = problem.errors && Object.values(problem.errors).flat().join(' ');
-  throw new Error(problem.message || validationText || problem.detail || 'Operazione non riuscita. Riprova.');
+  const json = (response.headers.get('Content-Type') || '').includes('json');
+  if (response.status === 204 && response.ok) return null;
+  if (!json) throw new Error('Il server non ha restituito i dati della clinica. In Visual Studio arresta e riavvia il progetto ASP.NET Core, poi premi Riprova caricamento.');
+  const data = await response.json();
+  if (response.ok) return data;
+  const validationText = data.errors && Object.values(data.errors).flat().join(' ');
+  throw new Error(data.message || validationText || data.detail || 'Operazione non riuscita. Riprova.');
 }
 
 function fillSelect(select, items, placeholder, labelSelector = (item) => item.name) {
@@ -131,34 +145,122 @@ function renderDoctors(items) {
   list.append(fragment);
 }
 
-async function loadReferenceData() {
-  try {
-    const { specialties, locations, doctors: loadedDoctors } = await apiRequest('/api/reference-data');
-    doctors = loadedDoctors;
-    fillSelect(specialtySelect, specialties, 'Tutte le specialità');
-    fillSelect(locationSelect, locations, 'Tutte le sedi');
-    fillSelect(doctorSelect, doctors.filter((doctor) => doctor.isAvailable), 'Seleziona un medico',
-      (doctor) => `${doctor.fullName} — ${doctor.specialty}`);
-    renderDoctors(doctors);
-  } catch (error) {
-    console.error('Impossibile caricare i dati dal database:', error);
-    specialtySelect.replaceChildren(new Option('Dati non disponibili', ''));
-    locationSelect.replaceChildren(new Option('Dati non disponibili', ''));
-    doctorSelect.replaceChildren(new Option('Prenotazioni non disponibili', ''));
-    renderDoctors([]);
-  }
+function updateDoctorChoices(preferred = doctorSelect.value) {
+  const available = doctors.filter((doctor) => doctor.isAvailable);
+  const filtered = available.filter((doctor) => (!bookingFilters.specialtyId || doctor.specialtyId === bookingFilters.specialtyId)
+    && (!bookingFilters.locationId || doctor.locationId === bookingFilters.locationId));
+  fillSelect(doctorSelect, filtered, filtered.length ? 'Seleziona un medico' : 'Nessun medico per questi filtri',
+    (doctor) => `${doctor.fullName} — ${doctor.specialty} · ${doctor.location}`);
+  if (filtered.some((doctor) => String(doctor.id) === preferred)) doctorSelect.value = preferred;
+  else if (filtered.length === 1) doctorSelect.value = filtered[0].id;
+  doctorSelect.disabled = !filtered.length;
+  showAllDoctors.hidden = !!filtered.length || !available.length;
+  dataStatus.textContent = filtered.length ? `${filtered.length} medici selezionabili. Scegli medico e giorno per vedere gli orari.`
+    : available.length ? 'Nessun medico corrisponde alla specialità e alla sede scelte. Puoi cambiare i filtri o mostrare tutti i medici.'
+    : 'Nessun medico prenotabile nel database. Verifica che i medici siano disponibili e abbiano turni configurati.';
+  form.querySelector('button[type=submit]').disabled = submitting || !filtered.length;
 }
 
-// Tutti i pulsanti con data-book condividono lo stesso dialog di prenotazione.
-document.querySelectorAll('[data-book]').forEach((button) => {
-  button.addEventListener('click', () => {
-    fillSelect(doctorSelect, doctors.filter((doctor) => doctor.isAvailable), 'Seleziona un medico',
-      (doctor) => `${doctor.fullName} — ${doctor.specialty}`);
-    refreshDateMinimum();
-    bookingDate.value = bookingDate.min;
-    doctorChanged();
-    dialog.showModal();
-  });
+async function loadReferenceData(force = false) {
+  if (referencePromise) return referencePromise;
+  if (referenceState === 'ready' && !force) return true;
+  referenceState = 'loading';
+  doctorSelect.disabled = true;
+  retryData.hidden = true;
+  dataStatus.textContent = 'Caricamento medici dal database…';
+  form.querySelector('button[type=submit]').disabled = true;
+  referencePromise = (async () => {
+    try {
+      let data;
+      try {
+        data = await apiRequest('/api/reference-data');
+        if (!Array.isArray(data.doctors) || !Array.isArray(data.specialties) || !Array.isArray(data.locations))
+          throw new Error('Dati di riferimento incompleti.');
+      } catch {
+        // Compatibilità con installazioni dove manca ancora la procedura aggregata.
+        const [specialties, locations, loadedDoctors] = await Promise.all([
+          apiRequest('/api/specialties'), apiRequest('/api/locations'), apiRequest('/api/doctors'),
+        ]);
+        if (![specialties, locations, loadedDoctors].every(Array.isArray)) throw new Error('Dati di riferimento incompleti.');
+        data = { specialties, locations, doctors: loadedDoctors };
+      }
+      const specialty = specialtySelect.value, location = locationSelect.value;
+      doctors = data.doctors;
+      fillSelect(specialtySelect, data.specialties, 'Tutte le specialità');
+      fillSelect(locationSelect, data.locations, 'Tutte le sedi');
+      if ([...specialtySelect.options].some((x) => x.value === specialty)) specialtySelect.value = specialty;
+      if ([...locationSelect.options].some((x) => x.value === location)) locationSelect.value = location;
+      referenceState = 'ready';
+      updateDoctorChoices();
+      renderDoctors(doctors);
+      return true;
+    } catch (error) {
+      referenceState = 'failed';
+      fillSelect(doctorSelect, [], 'Medici non caricati');
+      doctorSelect.disabled = true;
+      dataStatus.textContent = `Impossibile caricare i medici. ${error.message}`;
+      retryData.hidden = false;
+      showAllDoctors.hidden = true;
+      return false;
+    } finally {
+      referencePromise = null;
+    }
+  })();
+  return referencePromise;
+}
+
+async function openBooking(filtered = false) {
+  const dateInput = document.querySelector('#date');
+  refreshDateMinimum();
+  if (filtered && !dateInput.reportValidity()) return;
+  const session = ++bookingSession;
+  bookingFilters = filtered ? { specialtyId: Number(specialtySelect.value), locationId: Number(locationSelect.value) }
+    : { specialtyId: 0, locationId: 0 };
+  bookingDate.value = filtered && dateInput.value ? dateInput.value : bookingDate.min;
+  clearSlots();
+  if (!dialog.open) dialog.showModal();
+  if (!await loadReferenceData() || session !== bookingSession || !dialog.open) return;
+  updateDoctorChoices();
+  await doctorChanged();
+}
+
+document.querySelectorAll('[data-book]').forEach((button) => button.addEventListener('click', () => openBooking()));
+retryData.addEventListener('click', async () => {
+  const session = bookingSession;
+  if (await loadReferenceData(true) && session === bookingSession && dialog.open) {
+    updateDoctorChoices();
+    await doctorChanged();
+  }
+});
+showAllDoctors.addEventListener('click', async () => {
+  bookingFilters = { specialtyId: 0, locationId: 0 };
+  updateDoctorChoices();
+  await doctorChanged();
+});
+nextAvailable.addEventListener('click', async () => {
+  const version = ++calendarVersion;
+  slotsController?.abort();
+  slotsController = new AbortController();
+  nextAvailable.disabled = true;
+  try {
+    const query = new URLSearchParams({ from: bookingDate.value });
+    if (serviceSelect.value) query.set('medicalServiceId', serviceSelect.value);
+    const slot = await apiRequest(`/api/doctors/${doctorSelect.value}/next-slot?${query}`, { signal: slotsController.signal });
+    if (version !== calendarVersion) return;
+    if (!slot) {
+      slotMessage.textContent = 'Nessun orario libero nei prossimi 28 giorni. Scegli un altro medico o contatta la clinica.';
+      return;
+    }
+    bookingDate.value = clinicDayFormat.format(new Date(slot.startsAt));
+    const expectedVersion = calendarVersion + 1;
+    await loadSlots();
+    if (calendarVersion !== expectedVersion) return;
+    if ([...slotSelect.options].some((x) => x.value === slot.startsAt)) slotSelect.value = slot.startsAt;
+  } catch (error) {
+    if (error.name !== 'AbortError' && version === calendarVersion) slotMessage.textContent = error.message;
+  } finally {
+    nextAvailable.disabled = false;
+  }
 });
 
 // Il dialog può essere chiuso dal pulsante X oppure cliccando sullo sfondo.
@@ -167,6 +269,7 @@ dialog.addEventListener('click', (event) => {
   if (event.target === dialog) dialog.close();
 });
 dialog.addEventListener('close', () => {
+  bookingSession++;
   calendarVersion++;
   doctorVersion++;
   slotsController?.abort();
@@ -181,7 +284,8 @@ dialog.addEventListener('close', () => {
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!form.reportValidity()) return;
+  if (submitting || referenceState !== 'ready' || doctorSelect.disabled || !form.reportValidity()) return;
+  submitting = true;
   errorMessage.hidden = true;
   const submitButton = form.querySelector('button[type="submit"]');
   submitButton.disabled = true;
@@ -202,6 +306,8 @@ form.addEventListener('submit', async (event) => {
 
     const result = await apiRequest('/api/appointments', { method: 'POST', body: JSON.stringify(payload) });
     document.querySelector('#bookingReference').textContent = `AUR-${String(result.id).padStart(6, '0')}`;
+    const doctor = doctors.find((item) => item.id === payload.doctorId);
+    document.querySelector('#bookingSummary').textContent = `${doctor?.fullName || 'Medico'} · ${doctor?.location || ''} · ${new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', dateStyle: 'full' }).format(new Date(payload.appointmentDate))} alle ${clinicTimeFormat.format(new Date(payload.appointmentDate))} (ora di Roma).`;
     form.hidden = true;
     dialog.querySelector('.success-message').hidden = false;
   } catch (error) {
@@ -209,7 +315,8 @@ form.addEventListener('submit', async (event) => {
     errorMessage.hidden = false;
     await loadSlots();
   } finally {
-    submitButton.disabled = false;
+    submitting = false;
+    submitButton.disabled = referenceState !== 'ready' || doctorSelect.disabled;
     submitButton.textContent = 'Richiedi appuntamento →';
   }
 });
@@ -237,22 +344,8 @@ const revealObserver = new IntersectionObserver((entries) => {
 }, { threshold: 0.12 });
 document.querySelectorAll('.reveal').forEach((element) => revealObserver.observe(element));
 
-// Filtra i medici caricati dal database e trasferisce la data scelta nel form.
-document.querySelector('#findVisit').addEventListener('click', () => {
-  const specialtyId = Number(specialtySelect.value);
-  const locationId = Number(locationSelect.value);
-  const filtered = doctors.filter((doctor) => doctor.isAvailable
-    && (!specialtyId || doctor.specialtyId === specialtyId)
-    && (!locationId || doctor.locationId === locationId));
-  fillSelect(doctorSelect, filtered, 'Seleziona un medico', (doctor) => `${doctor.fullName} — ${doctor.specialty}`);
-  refreshDateMinimum();
-  const dateInput = document.querySelector('#date');
-  if (!dateInput.reportValidity()) return;
-  const selectedDate = dateInput.value;
-  bookingDate.value = selectedDate || bookingDate.min;
-  doctorChanged();
-  dialog.showModal();
-});
+// La ricerca e i pulsanti generici usano lo stesso caricamento affidabile.
+document.querySelector('#findVisit').addEventListener('click', () => openBooking(true));
 
 document.querySelector('[data-open-search]').addEventListener('click', () => specialtySelect.focus());
 document.querySelector('#shopButton').addEventListener('click', () => alert('Il catalogo viene gestito nel database ed è in preparazione.'));

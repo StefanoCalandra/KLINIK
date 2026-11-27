@@ -173,6 +173,31 @@ class ApiTests(unittest.TestCase):
         query.update({'from': previous, 'to': previous})
         self.assertEqual(request('/api/admin/appointments?' + urllib.parse.urlencode(query))[1]['total'], 0)
 
+    def test_next_slot_respects_schedules_and_database_booking(self):
+        from zoneinfo import ZoneInfo
+        doctor, specialty, location = self.doctor(with_schedule=False)
+        start = (dt.datetime.now(ZoneInfo('Europe/Rome')) + dt.timedelta(days=7)).date()
+        target = start + dt.timedelta(days=2)
+        self.create('/api/doctor-schedules', {'doctorId': doctor, 'dayOfWeek': (target.weekday()+1)%7,
+            'startTime': '09:00:00', 'endTime': '10:00:00', 'slotDurationMinutes': 30, 'isActive': True})
+        self.assertEqual(self.slots(doctor, start.isoformat()), [])
+        code, slot = request(f'/api/doctors/{doctor}/next-slot?from={start}')
+        self.assertEqual(code, 200, slot)
+        self.assertEqual(dt.datetime.fromisoformat(slot['startsAt']).astimezone(ZoneInfo('Europe/Rome')).date(), target)
+        appointment = self.create('/api/appointments', {'patientName': 'Next slot ' + self.suffix,
+            'phone': '000', 'doctorId': doctor, 'appointmentDate': slot['startsAt']})
+        query = urllib.parse.urlencode({'from': str(target), 'to': str(target), 'doctorId': doctor})
+        code, data = request('/api/admin/appointments?' + query)
+        self.assertEqual(code, 200, data)
+        self.assertEqual([x['id'] for x in data['items']], [appointment])
+        self.assertEqual(request(f'/api/doctors/{doctor}/next-slot?from={start}')[1]['startsAt'], slot['endsAt'])
+        self.assertEqual(request(f'/api/doctors/{doctor}/next-slot?from=9999-12-31')[0], 400)
+        self.assertEqual(request('/api/doctors/2147483647/next-slot?from=2030-01-01')[0], 404)
+        self.assertEqual(request(f'/api/doctors/{doctor}/next-slot?from={start}&medicalServiceId=2147483647')[0], 204)
+        self.assertEqual(request(f'/api/doctors/{doctor}', 'PUT', {'fullName': 'Unavailable', 'isAvailable': False,
+            'specialtyId': specialty, 'locationId': location})[0], 204)
+        self.assertEqual(request(f'/api/doctors/{doctor}/next-slot?from={start}')[0], 204)
+
     def test_input_validation(self):
         cases = [('/api/specialties', {'name': None}),
                  ('/api/specialties', {'name': 'x' * 101}),

@@ -93,3 +93,16 @@ Il piano degli slot può ora effettuare seek per medico e intervallo temporale
 sull'indice univoco filtrato, che include `DurationMinutes`. Il limite inferiore
 è corretto grazie a `CK_Appointments_Duration` (durata massima 480 minuti):
 se si aumenta questo limite occorre aggiornare anche la funzione SQL.
+
+## Recupero del caricamento e prima disponibilità
+
+`GET /api/doctors/{id}/next-slot?from=2026-12-05&medicalServiceId=1` cerca il primo
+slot libero da quel giorno, per un massimo di 28 giorni. La prestazione è opzionale;
+la data è quella della clinica (Roma), mentre il risultato contiene timestamp UTC.
+La risposta è `204` quando non ci sono slot. Il salvataggio ricontrolla sempre la
+disponibilità: il risultato della ricerca non riserva lo slot.
+
+Oltre agli hash degli script, l'avvio verifica che le procedure richieste e la
+funzione degli slot esistano. Se un oggetto è stato eliminato, riapplica lo script
+delle procedure nella stessa transazione degli aggiornamenti. Non forza la
+disponibilità dei medici e non elimina prenotazioni o assenze.

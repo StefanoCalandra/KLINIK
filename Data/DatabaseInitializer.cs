@@ -75,7 +75,19 @@ public static class DatabaseInitializer
             var installedHash = await db.Database.SqlQueryRaw<string>(
                 "SELECT ScriptHash AS [Value] FROM dbo.KlinikScriptVersions WHERE ScriptName={0}", script.Name)
                 .SingleOrDefaultAsync();
-            applyFollowing |= installedHash != script.Hash;
+            // Ripara procedure eliminate manualmente anche a file invariati.
+            var missingObjects = script.Name == "stored-procedures.sql" && await db.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*) AS [Value] FROM (VALUES
+                    (N'dbo.usp_ReferenceData_Get'), (N'dbo.usp_Doctor_Search'),
+                    (N'dbo.usp_Doctor_GetSlots'), (N'dbo.usp_Doctor_GetNextSlot'),
+                    (N'dbo.usp_Appointment_Save'), (N'dbo.usp_Appointment_Create'),
+                    (N'dbo.usp_Appointment_GetRange'), (N'dbo.usp_Appointment_Cancel'),
+                    (N'dbo.usp_Appointment_SetStatus'), (N'dbo.usp_DoctorAbsence_Create'),
+                    (N'dbo.usp_Product_GetAvailable'), (N'dbo.usp_Product_DecreaseStock'),
+                    (N'dbo.ufn_DoctorSlots')) required(Name)
+                WHERE OBJECT_ID(required.Name) IS NULL
+                """).SingleAsync() > 0;
+            applyFollowing |= installedHash != script.Hash || missingObjects;
             if (!applyFollowing) continue;
 
             foreach (var batch in Regex.Split(script.Text, @"^\s*GO\s*(?:--.*)?$", RegexOptions.Multiline | RegexOptions.IgnoreCase)

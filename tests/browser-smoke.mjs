@@ -87,6 +87,18 @@ try {
       assert.equal(new Date(booking.appointmentDate).toISOString(), new Date(selected).toISOString());
       assert.equal(booking.durationMinutes, 45);
       assert.equal(booking.medicalServiceId, medicalServiceId);
+      // La prenotazione pubblica deve essere consultabile nella pagina admin.
+      const adminPage = await context.newPage();
+      await adminPage.goto(`${base}/admin.html`);
+      await adminPage.locator('#from').fill(date);
+      await adminPage.locator('#to').fill(date);
+      await adminPage.locator('#search').fill(`AUR-${String(appointmentId).padStart(6, '0')}`);
+      await adminPage.locator('#filters button[type=submit]').click();
+      await adminPage.waitForFunction(() => document.querySelector('#total').textContent === '1');
+      assert.match(await adminPage.locator('#visits').textContent(), /Browser Smoke Test/);
+      assert.match(await adminPage.locator('#visits').textContent(), /45 min/);
+      await adminPage.close();
+
       assert.equal((await context.request.delete(`${base}/api/appointments/${appointmentId}`)).status(), 204);
       cleanup.pop();
       await page.locator('.dialog-close').click();

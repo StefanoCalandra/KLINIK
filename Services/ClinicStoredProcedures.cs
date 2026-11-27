@@ -138,6 +138,18 @@ public sealed class ClinicStoredProcedures(KlinikDbContext db) : IAsyncDisposabl
         return results;
     }
 
+    public async Task<SlotResult?> GetNextSlotAsync(int doctorId, DateOnly from, int? medicalServiceId, CancellationToken cancellationToken)
+    {
+        await using var command = await CreateCommandAsync("dbo.usp_Doctor_GetNextSlot", cancellationToken);
+        AddParameter(command, "@DoctorId", DbType.Int32, doctorId);
+        AddParameter(command, "@From", DbType.Date, from.ToDateTime(TimeOnly.MinValue));
+        AddParameter(command, "@MedicalServiceId", DbType.Int32, medicalServiceId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new SlotResult(DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc),
+            DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc), reader.GetInt32(2));
+    }
+
     public async Task<int> CreateAbsenceAsync(DoctorAbsenceRequest request, CancellationToken cancellationToken)
     {
         await using var command = await CreateCommandAsync("dbo.usp_DoctorAbsence_Create", cancellationToken);
