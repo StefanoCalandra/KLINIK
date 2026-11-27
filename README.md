@@ -760,3 +760,33 @@ recenti. I record del database non vengono modificati da questi filtri.
 verifica che compaiano subito nella pagina admin, anche prima di impostare date.
 Verifica anche il vecchio filtro di sette giorni (che le esclude), il recupero
 con tutti i periodi/in attesa, la ricerca per codice e il layout mobile.
+
+### Verifica delle operazioni amministrative nel database
+
+`npm run test:actions` crea soltanto dati sintetici e verifica conferma e cambio
+stato dalla pagina admin, annullamento con conservazione dello storico, rifiuto
+della riattivazione su un orario occupato, aggiornamento di dati/data e
+cancellazione definitiva tramite le API. Ricarica l'agenda per controllare che
+rifletta anche le modifiche eseguite dal backend. Rimuove i record di prova alla fine.
+Il test usa le credenziali amministrative come gli altri test browser.
+
+Nel pannello attuale sono disponibili conferma, cambio stato e annullamento.
+Modifica dei dati/data e cancellazione definitiva sono disponibili nel backend
+(`PUT` e `DELETE /api/appointments/{id}`), senza un pulsante dedicato nella pagina.
+Il pulsante **Annulla** imposta `Annullata`: non elimina fisicamente il record.
+Una visita completata non può essere annullata con quel comando.
+
+Per una lettura SQL indipendente usare `database/verify-appointments.sql` in SSMS
+oppure in SQL Server Object Explorer di Visual Studio. Il file mostra istanza e
+database correnti e permette di cercare l'id numerico del codice AUR.
+Rieseguire la query dopo l'azione: un risultato già aperto in SSMS non si aggiorna
+automaticamente. Visual Studio esegue il backend; SSMS e Object Explorer leggono
+SQL Server. Devono essere collegati alla stessa istanza e allo stesso database
+indicati da `ConnectionStrings:KlinikDatabase`.
+
+Per verifiche automatiche con un secondo client SQL, il test accetta il hook
+opzionale `KLINIK_SQL_ASSERTOR`: percorso di uno script Python che riceve id e
+JSON dei valori attesi, ed esce con codice diverso da zero se la lettura SQL non
+corrisponde. L'interprete può essere impostato con `KLINIK_SQL_ASSERTOR_PYTHON`.
+Le credenziali SQL vanno configurate nell'ambiente del verificatore, non nei log
+né negli argomenti di avvio. Senza hook il test esegue letture indipendenti delle API.
