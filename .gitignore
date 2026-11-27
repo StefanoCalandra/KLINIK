@@ -4,3 +4,7 @@ node_modules/
 TestResults/
 *.user
 *.suo
+
+App_Data/
+__pycache__/
+*.pyc

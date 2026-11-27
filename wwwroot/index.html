@@ -7,7 +7,7 @@
   <title>Clinica Aurora — La salute, più vicina</title>
   <!-- Gli asset hanno una versione nella query: il browser può conservarli a
        lungo e scaricarli di nuovo solo quando questo valore viene aggiornato. -->
-  <link rel="stylesheet" href="styles.css?v=20261127">
+  <link rel="stylesheet" href="styles.css?v=20261127-auth">
 </head>
 <body>
   <!-- Intestazione: marchio, collegamenti alle sezioni e azioni principali. -->
@@ -23,6 +23,7 @@
       <a href="#contatti">Contatti</a>
     </nav>
     <div class="header-actions">
+      <a class="btn admin-entry" href="admin.html">Area amministrazione</a>
       <button class="icon-btn" aria-label="Cerca" data-open-search>
         <svg aria-hidden="true"><use href="#icon-search"/></svg>
       </button>
@@ -129,7 +130,7 @@
     </section>
   </main>
 
-  <footer><a class="brand" href="#top"><span class="brand-mark">✦</span><span>Clinica <strong>Aurora</strong></span></a><p>Via della Salute 12, Milano · +39 02 555 0188</p><p>© 2026 Clinica Aurora · <a href="admin.html">Area amministrazione</a></p></footer>
+  <footer><a class="brand" href="#top"><span class="brand-mark">✦</span><span>Clinica <strong>Aurora</strong></span></a><p>Via della Salute 12, Milano · +39 02 555 0188</p><p>© 2026 Clinica Aurora</p></footer>
 
   <!-- Dialog nativo accessibile; JavaScript gestisce apertura e conferma. -->
   <dialog id="bookingDialog">

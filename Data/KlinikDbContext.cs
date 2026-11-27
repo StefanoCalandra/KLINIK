@@ -16,8 +16,11 @@ public sealed class KlinikDbContext(DbContextOptions<KlinikDbContext> options) :
 
     public DbSet<DoctorAbsence> DoctorAbsences => Set<DoctorAbsence>();
 
+    public DbSet<AdminAccount> AdminAccounts => Set<AdminAccount>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<AdminAccount>().Property(x => x.Id).ValueGeneratedNever();
         modelBuilder.Entity<Appointment>().Property(x => x.DurationMinutes).HasDefaultValue(30);
         modelBuilder.Entity<Appointment>().HasOne(x => x.MedicalService).WithMany()
             .HasForeignKey(x => x.MedicalServiceId).OnDelete(DeleteBehavior.Restrict);

@@ -27,8 +27,8 @@ storici inseriti manualmente.
 
 ## Calendario e prenotazioni
 
-L'avvio esegue, nell'ordine, `expansion.sql`, `calendar-schema.sql` e
-`stored-procedures.sql`. Per un'installazione manuale, eseguire questi tre file
+L'avvio esegue, nell'ordine, `expansion.sql`, `calendar-schema.sql`, `admin-schema.sql` e
+`stored-procedures.sql`. Per un'installazione manuale, eseguire questi quattro file
 nel database selezionato dopo `schema.sql`. L'aggiornamento è idempotente:
 aggiunge durata, prestazione opzionale e assenze senza eliminare appuntamenti.
 Alle prenotazioni storiche viene assegnata una durata convenzionale di 30 minuti;
@@ -66,8 +66,7 @@ La disponibilità visualizzata non costituisce una prenotazione provvisoria.
 Test: `npm run test:api` include durate, sovrapposizioni, assenze, concorrenza,
 annullamento/riattivazione e cambio d'ora. `npm run test:browser` verifica il modulo
 in Europe/Rome e America/New_York con record di prova rimossi al termine.
-Come le altre API amministrative della demo, le nuove API delle assenze richiedono
-l'aggiunta di autenticazione e autorizzazione prima dell'uso pubblico.
+Le API delle assenze e le modifiche amministrative richiedono il login amministrativo.
 
 Per le regressioni SQL dirette: `sqlcmd -b -d <database-di-sviluppo> -i tests/stored-procedures.sql`.
 
@@ -106,3 +105,12 @@ Oltre agli hash degli script, l'avvio verifica che le procedure richieste e la
 funzione degli slot esistano. Se un oggetto è stato eliminato, riapplica lo script
 delle procedure nella stessa transazione degli aggiornamenti. Non forza la
 disponibilità dei medici e non elimina prenotazioni o assenze.
+
+## Account amministrativo
+
+`admin-schema.sql` aggiunge `dbo.AdminAccounts`, senza modificare appuntamenti e
+turni. Il backend crea una sola volta l'account iniziale `admin/admin` con hash
+PBKDF2. Il cambio credenziali passa dalla pagina amministrativa, richiede la
+password attuale e rinnova `SecurityStamp`, così i vecchi cookie non sono più
+validi. Non sono salvate password in chiaro e non viene restituito l'hash dalle API.
+Il normale avvio e la riapplicazione degli script non sovrascrivono l'account.

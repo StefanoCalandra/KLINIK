@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { authenticateContext } from './admin-auth.mjs';
 import { chromium } from 'playwright-core';
 
 const base = process.env.KLINIK_API_URL ?? 'http://127.0.0.1:5043';
@@ -6,6 +7,7 @@ const browser = await chromium.launch({
   executablePath: process.env.BROWSER_EXECUTABLE ?? '/usr/bin/chromium', headless: true,
 });
 const setup = await browser.newContext();
+await authenticateContext(setup, base);
 const cleanup = [];
 async function create(path, payload) {
   const response = await setup.request.post(base + path, { data: payload });
@@ -83,11 +85,12 @@ try {
       cleanup.push(`/api/appointments/${appointmentId}`);
       await page.waitForFunction(() => !document.querySelector('.success-message').hidden);
       assert.match(await page.locator('#bookingReference').textContent(), /^AUR-\d+$/);
-      const booking = await (await context.request.get(`${base}/api/appointments/${appointmentId}`)).json();
+      const booking = await (await setup.request.get(`${base}/api/appointments/${appointmentId}`)).json();
       assert.equal(new Date(booking.appointmentDate).toISOString(), new Date(selected).toISOString());
       assert.equal(booking.durationMinutes, 45);
       assert.equal(booking.medicalServiceId, medicalServiceId);
       // La prenotazione pubblica deve essere consultabile nella pagina admin.
+      await authenticateContext(context, base);
       const adminPage = await context.newPage();
       await adminPage.goto(`${base}/admin.html`);
       await adminPage.locator('#from').fill(date);

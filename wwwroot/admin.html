@@ -5,16 +5,22 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>Agenda visite · Amministrazione Clinica Aurora</title>
-  <link rel="stylesheet" href="admin.css?v=20261124">
-  <script src="admin.js?v=20261124" defer></script>
+  <link rel="stylesheet" href="admin.css?v=20261127-auth">
+  <script src="admin.js?v=20261127-auth" defer></script>
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-icon" aria-hidden="true">✦</span><span>Clinica <strong>Aurora</strong></span></a>
     <span class="area-label">Area amministrazione</span>
+    <div id="accountActions" class="account-actions" hidden><span id="currentUsername"></span><button id="openCredentials" class="button secondary" type="button">Credenziali</button><button id="logout" class="button secondary" type="button">Esci</button></div>
     <a class="back-link" href="index.html">Torna al sito <span aria-hidden="true">↗</span></a>
   </header>
-  <main>
+  <main id="loginMain" class="login-main">
+    <section class="login-card" aria-labelledby="loginTitle"><span class="login-symbol" aria-hidden="true">✦</span><p class="eyebrow">AREA AMMINISTRAZIONE</p><h1 id="loginTitle">Bentornato<span>.</span></h1><p class="intro">Accedi per consultare e gestire le visite della clinica.</p>
+      <form id="loginForm"><label for="loginUsername">Username<input id="loginUsername" name="username" autocomplete="username" maxlength="80" required></label><label for="loginPassword">Password<input id="loginPassword" name="password" type="password" autocomplete="current-password" maxlength="256" required></label><p id="loginError" class="message error" role="alert" hidden></p><button id="loginSubmit" class="button primary" type="submit" disabled>Accedi →</button></form><p id="loginStatus" role="status">Verifica della sessione…</p><button id="retryLogin" class="text-button" type="button" hidden>Riprova connessione</button>
+    </section>
+  </main>
+  <main id="adminMain" hidden>
     <div class="page-heading"><div><p class="eyebrow">SEGRETERIA / APPUNTAMENTI</p><h1>Agenda visite<span>.</span></h1><p class="intro">Tutti gli appuntamenti, le persone e i luoghi della cura.</p></div><button id="refresh" class="button secondary" type="button">↻ Aggiorna agenda</button></div>
     <div class="context"><span class="context-dot" aria-hidden="true"></span>Orari della clinica · Roma<span id="updated"></span></div>
     <section class="stats" aria-label="Riepilogo del periodo e dei filtri selezionati">
@@ -53,6 +59,11 @@
     <div class="detail-actions"><label>Stato della visita<select id="detailStatus"><option>In attesa</option><option>Confermata</option><option>Completata</option><option>Annullata</option><option>Assente</option></select></label><button id="saveStatus" class="button primary" type="button">Salva stato</button></div>
     <p id="detailError" class="message error" role="alert" hidden></p>
     <p class="hint">Le modifiche vengono registrate nel database. L’annullamento conserva lo storico e libera l’orario.</p>
+  </dialog>
+  <dialog id="credentialsDialog" aria-labelledby="credentialsTitle">
+    <div class="detail-heading"><div><p class="eyebrow">IMPOSTAZIONI ACCOUNT</p><h2 id="credentialsTitle">Modifica credenziali</h2></div><button id="closeCredentials" class="close" type="button" aria-label="Chiudi credenziali">×</button></div>
+    <p class="hint">La modifica viene salvata per i prossimi accessi e disconnette le altre sessioni aperte.</p>
+    <form id="credentialsForm"><label>Username<input id="newUsername" name="username" maxlength="80" autocomplete="username" required></label><label>Password attuale<input id="currentPassword" name="currentPassword" type="password" maxlength="256" autocomplete="current-password" required></label><label>Nuova password<input id="newPassword" name="newPassword" type="password" maxlength="256" autocomplete="new-password" required></label><label>Conferma nuova password<input id="confirmPassword" name="confirmPassword" type="password" maxlength="256" autocomplete="new-password" required></label><p id="credentialsError" class="message error" role="alert" hidden></p><button id="saveCredentials" class="button primary" type="submit">Salva credenziali</button></form>
   </dialog>
 </body>
 </html>

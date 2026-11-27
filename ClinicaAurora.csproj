@@ -21,7 +21,10 @@
     <RuntimeHostConfigurationOption Include="System.Globalization.AppLocalIcu" Value="72.1" Condition="'$(OS)' == 'Windows_NT'" />
   </ItemGroup>
   <ItemGroup>
+    <Content Remove="App_Data\**" />
+    <None Remove="App_Data\**" />
     <None Update="database\expansion.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="database\admin-schema.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Update="database\calendar-schema.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Update="database\stored-procedures.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

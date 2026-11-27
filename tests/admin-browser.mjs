@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { authenticateContext } from './admin-auth.mjs';
 import { chromium } from 'playwright-core';
 const base = process.env.KLINIK_API_URL ?? 'http://127.0.0.1:5043';
 const browser = await chromium.launch({ executablePath: process.env.BROWSER_EXECUTABLE ?? '/usr/bin/chromium', headless: true });
 const setup = await browser.newContext();
+await authenticateContext(setup, base);
 const cleanup = [];
 async function create(path, data) {
   const response = await setup.request.post(base + path, { data });
@@ -27,6 +29,7 @@ try {
     notes: '<img src=x onerror="window.injected=true">' }));
   for (const timezoneId of ['Europe/Rome', 'America/New_York']) {
     const context = await browser.newContext({ timezoneId, locale: 'it-IT', viewport: { width: 1440, height: 1000 } });
+    await authenticateContext(context, base);
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));

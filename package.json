@@ -11,7 +11,9 @@
     "test:api": "python3 tests/api_smoke.py",
     "test:browser": "node tests/browser-smoke.mjs",
     "test:admin": "node tests/admin-browser.mjs",
-    "test:booking": "node tests/booking-recovery.mjs"
+    "test:booking": "node tests/booking-recovery.mjs",
+    "test:auth": "python3 tests/auth_smoke.py",
+    "test:login": "node tests/login-browser.mjs"
   },
   "engines": {
     "node": ">=18"
