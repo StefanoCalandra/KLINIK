@@ -13,7 +13,8 @@
     "test:admin": "node tests/admin-browser.mjs",
     "test:booking": "node tests/booking-recovery.mjs",
     "test:auth": "python3 tests/auth_smoke.py",
-    "test:login": "node tests/login-browser.mjs"
+    "test:login": "node tests/login-browser.mjs",
+    "test:visibility": "node tests/admin-visibility.mjs"
   },
   "engines": {
     "node": ">=18"

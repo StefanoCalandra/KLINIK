@@ -389,3 +389,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.index_columns ic
         WHERE Status<>N'Annullata' WITH (DROP_EXISTING=ON);
 COMMIT;
 GO
+
+-- Vista amministrativa senza periodo: paginazione delle richieste più recenti.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'dbo.Appointments') AND name=N'IX_Appointments_CreatedAt_Id')
+    CREATE INDEX IX_Appointments_CreatedAt_Id ON dbo.Appointments(CreatedAt DESC,Id DESC)
+        INCLUDE (AppointmentDate,Status,DoctorId);
+GO

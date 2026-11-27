@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>Agenda visite · Amministrazione Clinica Aurora</title>
-  <link rel="stylesheet" href="admin.css?v=20261127-auth">
-  <script src="admin.js?v=20261127-auth" defer></script>
+  <link rel="stylesheet" href="admin.css?v=20261127-agenda">
+  <script src="admin.js?v=20261127-agenda" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -21,10 +21,10 @@
     </section>
   </main>
   <main id="adminMain" hidden>
-    <div class="page-heading"><div><p class="eyebrow">SEGRETERIA / APPUNTAMENTI</p><h1>Agenda visite<span>.</span></h1><p class="intro">Tutti gli appuntamenti, le persone e i luoghi della cura.</p></div><button id="refresh" class="button secondary" type="button">↻ Aggiorna agenda</button></div>
+    <div class="page-heading"><div><p class="eyebrow">SEGRETERIA / APPUNTAMENTI</p><h1>Agenda visite<span>.</span></h1><p class="intro">Tutti gli appuntamenti, le persone e i luoghi della cura.</p></div><div class="heading-actions"><button id="showPending" class="button primary" type="button">Tutte le richieste in attesa</button><button id="refresh" class="button secondary" type="button">↻ Aggiorna agenda</button></div></div>
     <div class="context"><span class="context-dot" aria-hidden="true"></span>Orari della clinica · Roma<span id="updated"></span></div>
     <section class="stats" aria-label="Riepilogo del periodo e dei filtri selezionati">
-      <article><span>Visite nel periodo</span><strong id="total">—</strong><small>Con i filtri selezionati</small></article>
+      <article><span id="totalLabel">Richieste registrate</span><strong id="total">—</strong><small>Con i filtri selezionati</small></article>
       <article><span>In attesa</span><strong id="pending">—</strong><small>Da verificare e confermare</small></article>
       <article><span>Confermate</span><strong id="confirmed">—</strong><small>Appuntamenti confermati</small></article>
       <article><span>Completate</span><strong id="completed">—</strong><small id="otherCounts">—</small></article>
@@ -32,14 +32,15 @@
     <section class="panel" aria-labelledby="agendaTitle">
       <div class="panel-heading"><div><h2 id="agendaTitle">Appuntamenti</h2><p>Consulta i dettagli e gestisci lo stato delle visite.</p></div><button id="reset" type="button" class="text-button">Azzera filtri</button></div>
       <form id="filters" class="filters">
-        <label>Dal<input id="from" name="from" type="date" min="2000-01-01" max="2099-12-31" required></label>
-        <label>Al<input id="to" name="to" type="date" min="2000-01-01" max="2099-12-31" required></label>
+        <label>Dal (facoltativo)<input id="from" name="from" type="date" min="2000-01-01" max="2099-12-31"></label>
+        <label>Al (facoltativo)<input id="to" name="to" type="date" min="2000-01-01" max="2099-12-31"></label>
         <label>Medico<select id="doctor" name="doctorId"><option value="">Tutti i medici</option></select></label>
         <label>Sede<select id="location" name="locationId"><option value="">Tutte le sedi</option></select></label>
         <label>Stato<select id="status" name="status"><option value="">Tutti gli stati</option><option>In attesa</option><option>Confermata</option><option>Completata</option><option>Annullata</option><option>Assente</option></select></label>
         <label class="search-label">Cerca un appuntamento<input id="search" name="search" maxlength="120" type="search" placeholder="Paziente, telefono o codice AUR-…"></label>
         <button class="button primary" type="submit">Applica filtri <span aria-hidden="true">→</span></button>
       </form>
+      <div class="filter-scope"><p id="filterScope">Tutte le date · Richieste ordinate dalla più recente.</p><button id="allDates" type="button" class="text-button" hidden>Mostra tutte le date</button></div>
       <p id="error" class="message error" role="alert" hidden></p>
       <p id="notice" class="message notice" role="status" hidden></p>
       <div id="results" aria-busy="false">

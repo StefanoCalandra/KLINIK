@@ -631,7 +631,8 @@ durata, sede con indirizzo/città e stato. Il pannello **Dettagli** aggiunge ema
 note, specialità, codice della prenotazione e data di registrazione. Sono presenti
 ricerca per paziente/telefono/codice, filtri per periodo, medico, sede e stato,
 riepiloghi sul risultato completo dei filtri e pagine da 25, 50 o 100 visite.
-Il periodo iniziale comprende oggi e i sei giorni successivi, nel fuso di Roma.
+All’apertura sono mostrate tutte le richieste, ordinate dalla registrazione più recente.
+Le date sono facoltative; gli orari e gli eventuali filtri temporali usano il fuso di Roma.
 
 I pulsanti permettono di confermare e annullare una visita; il dettaglio consente
 anche di assegnare gli altri stati supportati. L'annullamento richiede conferma,
@@ -642,9 +643,10 @@ appuntamenti dal pannello.
 
 `GET /api/admin/appointments?from=2026-11-24&to=2026-11-30&page=1&pageSize=25`
 restituisce `items`, `total`, `page`, `pageSize` e `summary`. Parametri opzionali:
-`doctorId`, `locationId`, `status` e `search` (fino a 120 caratteri). Le date del
-filtro sono inclusive e riferite a Roma; i timestamp JSON sono UTC. Il periodo
-massimo è di 366 giorni, negli anni 2000–2099. Filtri, aggregati e paginazione sono
+`from`, `to`, `doctorId`, `locationId`, `status` e `search` (fino a 120 caratteri).
+Senza date il risultato include tutto lo storico, con richieste recenti per prime.
+Se indicate, le date sono inclusive e riferite a Roma; i timestamp JSON sono UTC.
+Quando entrambe le date sono indicate, il periodo massimo è di 366 giorni, negli anni 2000–2099. Filtri, aggregati e paginazione sono
 eseguiti nel database, senza scaricare tutto lo storico. I risultati inviano
 `Cache-Control: no-store`. Medico, prestazione e sede visualizzati usano i dati
 correnti dei rispettivi record collegati, non uno storico delle loro modifiche.
@@ -686,9 +688,10 @@ aggiornati per evitare di riutilizzare nel browser la vecchia versione del modul
 
 Dopo l'invio, il codice `AUR-…` viene mostrato soltanto dopo la risposta di successo
 del salvataggio SQL, insieme a medico, sede e data/ora. Per verificare il record
-aprire **Area amministrazione**, impostare Dal/Al in modo da includere il giorno
-prenotato e cercare il codice. Il periodo iniziale dell'admin include solo oggi e
-i sei giorni successivi: una visita più lontana richiede di cambiare il periodo.
+aprire **Area amministrazione** e cercare il codice. L’agenda iniziale include tutte
+le date, anche per visite più lontane. Se sono stati impostati Dal/Al, usare
+**Mostra tutte le date** oppure **Tutte le richieste in attesa** per eliminare
+il limite temporale.
 In SSMS il record è nella tabella `dbo.Appointments` del database indicato dalla
 connessione dell'applicazione; `AppointmentDate` è memorizzata in UTC.
 
@@ -738,3 +741,22 @@ verifica questi flussi dall'interfaccia e la visibilità del pulsante fino a 320
 I test richiedono un database di sviluppo e ripristinano le credenziali iniziali
 al termine. Per test su credenziali già personalizzate usare
 `KLINIK_ADMIN_USERNAME` e `KLINIK_ADMIN_PASSWORD` nell'ambiente dei test.
+
+### Richieste in attesa oltre la settimana corrente
+
+L'agenda non applica più automaticamente il periodo di sette giorni. La vista
+iniziale comprende tutte le richieste, dalle più recenti; la paginazione rimane
+eseguita sul server. **Tutte le richieste in attesa** azzera gli altri filtri e
+mostra lo stato `In attesa` senza limiti di data. **Mostra tutte le date** elimina
+solo Dal/Al, mantenendo gli altri filtri. I riepiloghi indicano i risultati dei
+filtri effettivamente applicati, esplicitati sotto il modulo.
+
+`GET /api/admin/appointments?page=1&pageSize=25` è ora valido senza date. Se è
+indicato un periodo, le visite tornano a essere ordinate per data e ora della
+visita. Un indice su `(CreatedAt DESC, Id DESC)` supporta la vista delle richieste
+recenti. I record del database non vengono modificati da questi filtri.
+
+`npm run test:visibility` crea due prenotazioni pubbliche a 14 e 35 giorni e
+verifica che compaiano subito nella pagina admin, anche prima di impostare date.
+Verifica anche il vecchio filtro di sette giorni (che le esclude), il recupero
+con tutti i periodi/in attesa, la ricerca per codice e il layout mobile.
